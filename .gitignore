@@ -1,0 +1,40 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Datasets (downloaded externally, not committed)
+data/raw/
+
+# Processed data (keypoints, features — can be large)
+data/processed/
+
+# Trained models
+models/*.joblib
+models/*.pt
+models/*.task
+
+# Runtime recordings
+data/recordings/
+
+# Logs and runtime data
+logs/
+
+# Config with secrets (email credentials)
+config.yaml
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~

@@ -1,0 +1,104 @@
+{
+  "dataset_info": {
+    "total_samples": 104,
+    "train_samples": 87,
+    "test_samples": 17,
+    "n_features": 15,
+    "subjects_total": 1,
+    "clips_total": 49
+  },
+  "test_set_evaluation": {
+    "accuracy": 1.0,
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "roc_auc": 1.0,
+    "per_class": {
+      "0": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 13.0
+      },
+      "1": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 4.0
+      },
+      "accuracy": 1.0,
+      "macro avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 17.0
+      },
+      "weighted avg": {
+        "precision": 1.0,
+        "recall": 1.0,
+        "f1-score": 1.0,
+        "support": 17.0
+      }
+    },
+    "confusion_matrix": {
+      "tn": 13,
+      "fp": 0,
+      "fn": 0,
+      "tp": 4
+    },
+    "fall_precision": 1.0,
+    "fall_recall": 1.0,
+    "fall_f1": 1.0
+  },
+  "cross_validation": {
+    "n_folds": 5,
+    "fold_results": [
+      {
+        "fold": 0,
+        "f1": 1.0,
+        "precision": 1.0,
+        "recall": 1.0,
+        "roc_auc": 1.0
+      },
+      {
+        "fold": 1,
+        "f1": 0.5,
+        "precision": 1.0,
+        "recall": 0.3333333333333333,
+        "roc_auc": 0.8444444444444444
+      },
+      {
+        "fold": 2,
+        "f1": 0.4,
+        "precision": 1.0,
+        "recall": 0.25,
+        "roc_auc": 1.0
+      },
+      {
+        "fold": 3,
+        "f1": 0.6666666666666666,
+        "precision": 0.5,
+        "recall": 1.0,
+        "roc_auc": 1.0
+      },
+      {
+        "fold": 4,
+        "f1": 0.6666666666666666,
+        "precision": 0.5,
+        "recall": 1.0,
+        "roc_auc": 0.9473684210526316
+      }
+    ],
+    "mean_f1": 0.6466666666666666,
+    "std_f1": 0.20396078054371142,
+    "mean_precision": 0.8,
+    "std_precision": 0.2449489742783178,
+    "mean_recall": 0.7166666666666666,
+    "std_recall": 0.348010216963685
+  },
+  "model_info": {
+    "model_path": "models/rf_baseline.joblib",
+    "model_type": "Random Forest",
+    "evaluation_date": "2026-09-19T14:40:32.282762"
+  }
+}
