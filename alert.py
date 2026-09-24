@@ -135,7 +135,8 @@ class AlertManager:
             logger.info(f"Email alert sent to {self.email_config['recipient']}")
             
             # Log alert locally
-            self._log_alert(fall_event, grace_result, 'email', True)
+            if log_alert:
+                self._log_alert(fall_event, grace_result, 'email', True)
             
             return True
             
@@ -261,6 +262,7 @@ class AlertManager:
             msg += "=" * 40 + "\n\n"
             msg += f"ALERT TYPE: {alert_type}\n"
             msg += f"TIMESTAMP: {dt_string}\n"
+            msg += f"ALERT SENT AT: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(time.time()))}\n"
             msg += f"SUBJECT ID: {subject_id}\n"
             msg += f"CLIP ID: {clip_id}\n"
             msg += f"CONFIDENCE: {tier} ({confidence:.1%})\n"
@@ -287,8 +289,10 @@ class AlertManager:
                   alert_type: str, success: bool):
         """Log alert attempt to local file."""
         try:
+            event_time = fall_event.get('timestamp')
             log_entry = {
-                'timestamp': time.time(),
+                'timestamp': event_time if event_time is not None else time.time(),
+                'alert_sent_at': time.time(),
                 'fall_event_timestamp': fall_event.get('timestamp'),
                 'fall_event_subject': fall_event.get('subject_id'),
                 'fall_event_clip': fall_event.get('clip_id'),

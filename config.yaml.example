@@ -11,15 +11,61 @@ pose:
 
 # ─── Feature Engineering ──────────────────────────────────────────────────────
 features:
-  window_sec: 3.0              # Feature extraction window length (seconds)
+  window_sec: 0.7              # Feature extraction window length (seconds)
   overlap: 0.5                 # Overlap fraction between consecutive windows (0.0–1.0)
   fps: 30                      # Expected input FPS (adjust per dataset/cam)
 
+# ─── Camera ────────────────────────────────────────────────────────────────────
+camera:
+  source: "data/demo/demo_fall.mp4"  # DEMO MODE: video file source (restore to 0 for webcam)
+  webcam_source: 0             # Live Monitor "Live webcam" toggle target (int index or RTSP)
+  demo_source: "data/demo/demo_fall.mp4"  # Live Monitor "Preloaded video" toggle target
+  index: 0                     # DEPRECATED: kept as fallback for backward compatibility
+  width: 640                   # Frame width
+  height: 480                  # Frame height
+  fps: 30                      # Target FPS
+  frame_stride: 1              # Process every Nth frame
+  buffer_size: 3               # Frame buffer size for smoothing
+
+# ─── Live Streaming (Phase 3) ─────────────────────────────────────────────────
+streaming:
+  enabled: true                # Serve MJPEG stream from dashboard process
+  host: "127.0.0.1"            # Bind host (127.0.0.1 = local only, privacy-first)
+  port: 8091                   # HTTP port for stream + metrics
+  jpeg_quality: 80             # JPEG quality (0-100)
+  max_fps: 15                  # Max frames/sec served to viewers
+  allow_remote: false          # If true, binds 0.0.0.0 (NOT recommended)
+
+# ─── Recording (opt-in, privacy) ─────────────────────────────────────────────
+recording:
+  enabled: false               # Recording disabled by default (privacy-first)
+  path: "data/recordings/"     # Recording storage directory
+  max_days: 7                  # Auto-delete recordings older than this
+  segment_duration: 300        # Max seconds per recording segment (5 min)
+  include_pose_overlay: true   # Draw pose skeleton overlay while recording
+
+# ─── Metrics (Phase 3) ────────────────────────────────────────────────────────
+metrics:
+  enabled: true
+  update_interval: 1.0         # Dashboard polling interval (seconds)
+  window_minutes: 60           # Rolling window for falls-per-minute calc
+
+# ─── Video File (for demo/testing) ──────────────────────────────────────────────
+video:
+  path: ""                     # Path to demo video file (empty = disabled)
+  loop: true                   # Loop video when ended
+  frame_stride: 1              # Process every Nth frame
+  real_time: true              # Sync playback to real-time
+  width: 640                   # Resize width
+  height: 480                  # Resize height
+  clip_storage: "data/alerts/clips/"  # Video clips storage directory
+  clip_duration_sec: 10        # Seconds of video to save around detection
+
 # ─── Decision Logic ───────────────────────────────────────────────────────────
 decision:
-  vote_windows: 3              # Consecutive high-confidence windows required for candidate
-  high_conf: 0.80              # Confidence threshold for "high" tier
-  low_conf: 0.50              # Below this = "low" tier (still reported but lower priority)
+  vote_windows: 1              # Consecutive high-confidence windows required for candidate
+  high_conf: 0.50              # Confidence threshold for "high" tier
+  low_conf: 0.40              # Below this = "low" tier (still reported but lower priority)
 
 # ─── Grace Period ──────────────────────────────────────────────────────────────
 grace_period:
@@ -38,6 +84,12 @@ email:
   app_password: ""             # 16-char app password (not your regular password)
   recipient: ""                # Caretaker/family contact email
   subject_fallback: "⚠️ Fall Detection Alert"
+
+# ─── Escalation (Phase 2 - Alert Management) ───────────────────────────────────
+escalation:
+  notify_on_escalate: true             # Re-email the caregiver when caregiver/admin escalates
+  notify_on_auto_escalate: true        # Re-email when the system auto-escalates a stale alert
+  auto_escalate_after_sec: 180         # Auto-escalate pending alerts older than this (0 = disabled)
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 paths:

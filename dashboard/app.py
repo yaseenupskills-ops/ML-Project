@@ -24,14 +24,13 @@ import hashlib
 import hmac
 import urllib.request
 import urllib.error
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, Dict, List
 import logging
 
 logger = logging.getLogger(__name__)
 
 ALERT_LOG = Path("logs/alerts.jsonl")
-cache_control = {"last_refresh": time.time(), "refresh_interval": 30}
 
 # ─── Light theme base colors (native widgets use .streamlit/config.toml) ──────
 _BG = "#f6f8fb"
@@ -166,8 +165,17 @@ def get_current_user() -> Optional[dict]:
         return {"username": "guest", "role": "admin", "display_name": "Guest User"}
     token = st.session_state.get("auth_token")
     if not token:
+        token = st.query_params.get("auth_token")
+        if isinstance(token, list):
+            token = token[0] if token else None
+    if not token:
         return None
-    return validate_token(token, _auth_secret())
+    user = validate_token(token, _auth_secret())
+    if user is None:
+        return None
+    st.session_state["auth_token"] = token
+    st.session_state["auth_user"] = user
+    return user
 
 
 def get_user_permissions(user: dict) -> dict:
@@ -228,7 +236,7 @@ def _auto_escalate_stale(alerts_df: pd.DataFrame, max_age_sec: float,
     stale_ts = []
     if max_age_sec <= 0 or alerts_df is None or len(alerts_df) == 0:
         return 0
-    now = pd.Timestamp.now()
+    now = pd.to_datetime(time.time(), unit="s")
     pending = alerts_df[(alerts_df["status"] == "pending") & alerts_df["datetime"].notna()]
     for _, row in pending.iterrows():
         age = (now - row["datetime"]).total_seconds()
@@ -299,32 +307,80 @@ def load_alert_history(log_path: Path) -> pd.DataFrame:
 
 
 def get_system_status() -> dict:
+    """Assemble system health from real sources (config, model file, stream server).
+
+    No hardcoded values: camera/model/uptime come from the actual system.
+    """
     import yaml
     try:
         with open("config.yaml", "r") as f:
             config = yaml.safe_load(f)
     except Exception:
         config = {}
+
     alerts_df = load_alert_history(ALERT_LOG)
     total = len(alerts_df)
     pending = len(alerts_df[alerts_df["status"] == "pending"]) if "status" in alerts_df.columns else 0
     acknowledged = len(alerts_df[alerts_df["status"] == "acknowledged"]) if "status" in alerts_df.columns else 0
     escalated = len(alerts_df[alerts_df["status"] == "escalated"]) if "status" in alerts_df.columns else 0
     false_alarms = len(alerts_df[alerts_df["outcome"] == "cancelled"]) if "outcome" in alerts_df.columns else 0
+
+    # ─── Camera / uptime: prefer the live stream server, fall back to config ───
+    cam_ok = False
+    cam_available = False
+    uptime_sec = 0.0
+    live = {}
+    base_url = _stream_base_url(_stream_server_config()) if _is_stream_server_running() else None
+    if base_url:
+        live = _fetch_stream_metrics(base_url) or {}
+        cam_available = bool(live.get("camera_available", False))
+        cam_ok = cam_available
+        uptime_sec = float(live.get("uptime_sec", 0) or 0)
+
+    # ─── Model: check that the RF artifact exists and loads ────────────────────
+    model_loaded = False
+    try:
+        model_path = Path(config.get("model", {}).get("rf_path", "models/rf_baseline.joblib"))
+        if model_path.exists():
+            import joblib
+            joblib.load(model_path)
+            model_loaded = True
+    except Exception:
+        model_loaded = False
+
+    # ─── Feature flags: read real config keys (no phantom `enabled` fields) ────
+    email_cfg = config.get("email", {})
+    email_configured = bool(email_cfg.get("sender") and email_cfg.get("app_password"))
+    grace_ok = float(config.get("grace_period", {}).get("timeout_sec", 0) or 0) > 0
+    sms_cfg = config.get("sms", {})
+    sms_on = bool(sms_cfg.get("enabled", False))
+
+    now = datetime.now()
     return {
-        "camera_online": True,
-        "model_loaded": True,
-        "last_check_in": datetime.now() - timedelta(minutes=3),
-        "uptime_hours": 12.5,
+        "camera_online": cam_ok,
+        "camera_available": cam_available,
+        "model_loaded": model_loaded,
+        "last_check_in": now,
+        "uptime_hours": uptime_sec / 3600.0 if uptime_sec > 0 else 0.0,
         "total_alerts_today": total,
         "total_pending": pending,
         "total_acknowledged": acknowledged,
         "total_escalated": escalated,
         "false_alarms_prevented": false_alarms,
-        "grace_period_enabled": config.get("grace_period", {}).get("enabled", True),
-        "email_enabled": config.get("email", {}).get("enabled", False),
-        "sms_enabled": config.get("sms", {}).get("enabled", False),
+        "grace_period_enabled": grace_ok,
+        "email_enabled": email_configured,
+        "sms_enabled": sms_on,
     }
+
+
+def _is_stream_server_running() -> bool:
+    """True if the local stream-server thread/HTTP is up."""
+    try:
+        import stream_server as ss
+        server = ss.get_stream_server()
+        return server is not None and getattr(server, "_httpd", None) is not None
+    except Exception:
+        return False
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # SHARED APP STATE
@@ -344,7 +400,6 @@ def render_login_page():
         with st.form("login_form", clear_on_submit=False):
             username = st.text_input("Username", placeholder="Enter your username")
             password = st.text_input("Password", type="password", placeholder="Enter your password")
-            st.checkbox("Remember me")
             submitted = st.form_submit_button("Sign in", use_container_width=True, type="primary")
 
         if submitted:
@@ -358,6 +413,9 @@ def render_login_page():
                         "role": found.get("role", "viewer"),
                         "display_name": found.get("display_name", found["username"]),
                     }
+                    # Persist the token in the URL so a page refresh does not log
+                    # the user out (Streamlit clears session state on re-connect).
+                    st.query_params["auth_token"] = token
                     st.rerun()
                 else:
                     st.error("Invalid username or password")
@@ -380,6 +438,8 @@ def render_sidebar_user(user: dict):
     if st.button("Log out", key="logout_btn", use_container_width=True):
         st.session_state.pop("auth_token", None)
         st.session_state.pop("auth_user", None)
+        if "auth_token" in st.query_params:
+            del st.query_params["auth_token"]
         st.rerun()
 
 
@@ -396,17 +456,10 @@ def show_toast(message: str, icon: str = "\u2705"):
 def _render_toolbar(current_page_title: str, user: dict):
     if current_page_title == "Live Monitor":
         return
-    c1, c2, c3 = st.columns([4, 1, 1])
+    c1, c2 = st.columns([5, 1])
     with c1:
-        st.markdown("<div></div>", unsafe_allow_html=True)
+        st.caption("Alerts auto-refresh every 30s \u00b7 Live Monitor preview updates continuously.")
     with c2:
-        auto_refresh = st.selectbox(
-            "Auto refresh", ["Off", "5s", "30s", "1m", "5m"], index=1,
-            key="header_refresh", label_visibility="collapsed",
-        )
-        refresh_map = {"Off": 0, "5s": 5, "30s": 30, "1m": 60, "5m": 300}
-        cache_control["refresh_interval"] = refresh_map.get(auto_refresh, 30)
-    with c3:
         if get_user_permissions(user).get("can_export"):
             if st.button("\U0001f4e5 Export CSV", key="export_btn", use_container_width=True):
                 st.session_state["do_export"] = True
@@ -510,10 +563,21 @@ def render_alert_detail(alert_data: dict, user: dict, key_prefix: str = "", expa
 
 def render_alerts_page():
     data = _app()
-    alerts_df = data.get("alerts_df")
     user = data.get("user")
 
     _page_header("\U0001f514", "Alert Management", "Monitor and respond to fall detection alerts.")
+
+    _render_alerts_body(user)
+
+
+# Auto-refresh the Alerts data region without re-running the whole app.
+# Disabled under automated tests (FG_PAGE) to keep AppTest deterministic.
+_ALERTS_AUTOREFRESH = 0 if (__import__("os").environ.get("FG_PAGE")) else 30
+
+
+@st.fragment(run_every=(_ALERTS_AUTOREFRESH if _ALERTS_AUTOREFRESH else None))
+def _render_alerts_body(user: dict):
+    alerts_df = filter_by_role(load_alert_history(ALERT_LOG), user)
 
     if alerts_df is None or len(alerts_df) == 0:
         st.info("No alerts yet. Fall detection events will appear here as they are detected.")
@@ -527,7 +591,7 @@ def render_alerts_page():
                                            notify=esc_cfg.get("notify_on_auto_escalate", False))
         if stale_count:
             st.toast(f"{stale_count} stale pending alert{'s' if stale_count != 1 else ''} auto-escalated", icon="\u26a0\ufe0f")
-            alerts_df = _app()["alerts_df"]
+            alerts_df = filter_by_role(load_alert_history(ALERT_LOG), user)
 
     total = int(len(alerts_df))
     pending = int((alerts_df["status"] == "pending").sum())
@@ -545,24 +609,26 @@ def render_alerts_page():
     m[5].metric("High-conf", high_conf)
     st.divider()
 
-    c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
-    with c1:
-        search = st.text_input("\U0001f50d", placeholder="Search subject or clip", key="alert_search", label_visibility="collapsed")
-    with c2:
-        tier_filter = st.pills("Tier", ["All", "high", "medium", "low"], default="All",
-                               key="alert_tier", label_visibility="collapsed", selection_mode="single")
-    with c3:
-        status_filter = st.pills("Status", ["All", "pending", "acknowledged", "escalated", "dismissed"],
-                                 default="All", key="alert_status", label_visibility="collapsed", selection_mode="single")
-    with c4:
-        sort_order = st.selectbox("Sort", ["Newest", "Oldest", "Confidence"], key="alert_sort", label_visibility="collapsed")
+    # ─── Filters (collapsed by default for a cleaner default view) ────────────
+    with st.expander("\U0001f50d Filters", expanded=False):
+        c1, c2, c3, c4 = st.columns([3, 1, 1, 1])
+        with c1:
+            search = st.text_input("\U0001f50d", placeholder="Search subject or clip", key="alert_search", label_visibility="collapsed")
+        with c2:
+            tier_filter = st.pills("Tier", ["All", "high", "medium", "low"], default="All",
+                                   key="alert_tier", label_visibility="collapsed", selection_mode="single")
+        with c3:
+            status_filter = st.pills("Status", ["All", "pending", "acknowledged", "escalated", "dismissed"],
+                                     default="All", key="alert_status", label_visibility="collapsed", selection_mode="single")
+        with c4:
+            sort_order = st.selectbox("Sort", ["Newest", "Oldest", "Confidence"], key="alert_sort", label_visibility="collapsed")
 
-    # ─── Date range filter (Phase 2) ────────────────────────────────────────────
-    d1, d2 = st.columns(2)
-    with d1:
-        start_date = st.date_input("From", value=None, key="alert_from")
-    with d2:
-        end_date = st.date_input("To", value=None, key="alert_to")
+        # ─── Date range filter ───────────────────────────────────────────────
+        d1, d2 = st.columns(2)
+        with d1:
+            start_date = st.date_input("From", value=None, key="alert_from")
+        with d2:
+            end_date = st.date_input("To", value=None, key="alert_to")
 
     filtered = alerts_df.copy()
     if search:
@@ -599,37 +665,7 @@ def render_alerts_page():
         "Status": filtered["status"].str.upper(),
     })
 
-    st.caption("Select one or more rows (or press \u2318-click) to inspect and act. \u2318=F \u00b7 \u23ce=R \u00b7 Esc=clear")
-    keyboard_html = """
-    <div id="kb-root"></div>
-    <script>
-    (function() {
-      function findInputs(){const all=[];function walk(root){
-        (root.querySelectorAll('input')||[]).forEach(function(i){all.push(i)});
-        (root.querySelectorAll('*')||[]).forEach(function(el){if(el.shadowRoot)walk(el.shadowRoot)});
-      } walk(document); return all;}
-      document.addEventListener('keydown', function(e) {
-        if(e.metaKey||e.ctrlKey||e.altKey) return;
-        const t=(e.target.tagName||'').toLowerCase();
-        const k=e.key.toLowerCase();
-        if(k==='f'&&t!=='input'&&t!=='textarea') {
-          e.preventDefault();
-          const ins=findInputs();
-          const search=ins.find(function(i){return (i.placeholder||'').toLowerCase().indexOf('search')>-1})||ins[0];
-          if(search) search.focus();
-        } else if(k==='r'&&t!=='input'&&t!=='textarea') {
-          e.preventDefault();
-          const btn=document.querySelector('[data-testid="stToolbarButton"] button');
-          if(btn) btn.click();
-        } else if(e.key==='Escape') {
-          if(document.activeElement) document.activeElement.blur();
-          const ins=findInputs(); ins.forEach(function(i){i.blur()});
-        }
-      });
-    })();
-    </script>
-    """
-    st.html(keyboard_html)
+    st.caption("Select one or more rows to inspect and act. Use the table toolbar to search/filter.")
 
     event = st.dataframe(
         display_df,
@@ -701,6 +737,8 @@ def _stream_server_config() -> dict:
         "max_fps": float(s.get("max_fps", 15)),
         "camera": {
             "source": cam.get("source", cam.get("index", 0)),
+            "webcam_source": cam.get("webcam_source", cam.get("index", 0)),
+            "demo_source": cam.get("demo_source", "data/demo/demo_fall.mp4"),
             "width": int(cam.get("width", 640)),
             "height": int(cam.get("height", 480)),
             "fps": float(cam.get("fps", 30)),
@@ -765,7 +803,7 @@ def _render_live_metrics(status: dict, alerts_df: pd.DataFrame, base_url: str):
     rec_active = live.get("recording_active", False)
     cam_ok = live.get("camera_available", False)
 
-    now = pd.Timestamp.now()
+    now = pd.to_datetime(time.time(), unit="s")
     today = now.normalize()
     if "datetime" in alerts_df.columns and len(alerts_df) > 0:
         last_hour_count = int((alerts_df["datetime"] >= (now - pd.Timedelta(hours=1))).sum())
@@ -1030,6 +1068,95 @@ def _render_event_inspector(alerts_df: pd.DataFrame, user: dict):
         render_alert_detail(alert_data, user, key_prefix=f"live_{key_to_pos[selected]}", expanded=True)
 
 
+def _current_stream_source() -> Optional[object]:
+    """Return the active stream-server camera source value or None."""
+    try:
+        import stream_server as ss
+        server = ss.get_stream_server()
+        if server is None:
+            return None
+        cam_cfg = server.config.get("camera", {})
+        return cam_cfg.get("source", None)
+    except Exception:
+        return None
+
+
+def _render_source_toggle():
+    """Live Monitor input-source toggle: Live webcam <-> Preloaded video.
+
+    Each switch re-opens the camera on the new source and starts a fresh
+    fall-detection session, which runs a full grace period and then sends one
+    alert (email + alert-log entry) for the newly active source.
+    """
+    cfg = _stream_server_config()
+    cam = cfg.get("camera", {})
+    webcam_src = cam.get("webcam_source", 0)
+    demo_src = cam.get("demo_source", "data/demo/demo_fall.mp4")
+
+    current = _current_stream_source()
+    if current is None:
+        current = webcam_src
+
+    def _is_index(v):
+        return isinstance(v, int) or (isinstance(v, str) and v.isdigit())
+
+    label = "Live webcam" if (
+        _is_index(current) and str(current) == str(webcam_src)
+    ) else "Preloaded video"
+    default_idx = 0 if label == "Live webcam" else 1
+
+    c1, c2 = st.columns([3, 1])
+    with c1:
+        choice = st.radio(
+            "Input source",
+            ["Live webcam", "Preloaded video"],
+            index=default_idx,
+            horizontal=True,
+            key="live_source_toggle",
+        )
+    with c2:
+        st.caption("Switch starts a new fall-detection session on the selected source.")
+
+    want = webcam_src if choice == "Live webcam" else demo_src
+
+    if "live_source_applied" not in st.session_state:
+        st.session_state["live_source_applied"] = str(current)
+
+    if str(want) != st.session_state["live_source_applied"]:
+        st.session_state["live_source_applied"] = str(want)
+        import stream_server as ss
+        try:
+            server = ss.get_stream_server()
+            if server is not None:
+                server.switch_source(want)
+            from live_detection import get_live_detector
+            detector = get_live_detector()
+            detector.run_session(want)
+            show_toast(f"Detection session started on {choice}", "\U0001f4f9")
+        except Exception as e:
+            st.warning(f"Failed to switch source: {e}")
+        time.sleep(0.3)
+        st.rerun()
+
+    # Status line for the active session
+    try:
+        from live_detection import get_live_detector
+        detector = get_live_detector()
+        status = detector.status()
+        parts = [f"Active source: **{choice}**"]
+        if status.get("active"):
+            parts.append(f"Detection session **running** (grace \u2248 {status.get('grace_timeout_sec', 20)}s)")
+        else:
+            parts.append("Detection session **idle**")
+        if status.get("last_alert_at"):
+            parts.append("last alert " + time.strftime(
+                "%H:%M:%S", time.localtime(status["last_alert_at"])
+            ))
+        st.caption(" \u00b7 ".join(parts))
+    except Exception:
+        pass
+
+
 def render_live_monitor():
     data = _app()
     base_url = data.get("base_url")
@@ -1038,6 +1165,10 @@ def render_live_monitor():
         alerts_df = pd.DataFrame()
 
     _page_header("\U0001f4f9", "Live Monitor", "Real-time fall detection preview.")
+
+    # ─── Input source toggle (live webcam <-> preloaded video) ─────────────
+    _render_source_toggle()
+
     _render_video_panel(base_url)
 
     try:
@@ -1045,7 +1176,8 @@ def render_live_monitor():
     except Exception as e:
         st.warning(f"Live metrics unavailable: {e}")
 
-    _render_recording_panel(data.get("user"), base_url, _stream_server_config(), alerts_df)
+    with st.expander("\u23fa\ufe0f Recording & Playback", expanded=False):
+        _render_recording_panel(data.get("user"), base_url, _stream_server_config(), alerts_df)
     _render_event_inspector(alerts_df, data.get("user"))
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1140,7 +1272,7 @@ def render_analytics():
         valid = alerts_df[alerts_df["datetime"].notna()].copy()
         if len(valid) > 0:
             # ─── Week-over-week delta ─────────────────────────────────────────────
-            now = pd.Timestamp.now().normalize()
+            now = pd.to_datetime(time.time(), unit="s").normalize()
             week_ago = now - pd.Timedelta(days=7)
             this_week = valid[valid["datetime"] >= week_ago]
             last_week = valid[(valid["datetime"] >= (now - pd.Timedelta(days=14))) & (valid["datetime"] < week_ago)]
@@ -1156,7 +1288,7 @@ def render_analytics():
 
             valid["date"] = valid["datetime"].dt.normalize()
             counts = valid.groupby("date").size()
-            idx = pd.date_range(end=pd.Timestamp.now().normalize(), periods=14, freq="D")
+            idx = pd.date_range(end=pd.to_datetime(time.time(), unit="s").normalize(), periods=14, freq="D")
             cnt = counts.reindex(idx).fillna(0).astype(int)
             trend_df = pd.DataFrame({"Date": idx.strftime("%m-%d"), "Alerts": cnt.values})
             st.line_chart(trend_df, x="Date", y="Alerts", color=_PRIMARY)
@@ -1271,7 +1403,7 @@ def render_analytics():
                         if len(valid) > 0:
                             valid["date"] = valid["datetime"].dt.normalize()
                             counts = valid.groupby("date").size()
-                            idx = pd.date_range(end=pd.Timestamp.now().normalize(), periods=14, freq="D")
+                            idx = pd.date_range(end=pd.to_datetime(time.time(), unit="s").normalize(), periods=14, freq="D")
                             cnt = counts.reindex(idx).fillna(0).astype(int)
                             trend_series = pd.DataFrame({
                                 "Day": idx.strftime("%m-%d"),
@@ -1302,80 +1434,86 @@ def render_analytics():
 # SYSTEM PAGE
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def render_system_status_page():
+def render_settings_page():
     data = _app()
     status = data.get("status", {})
 
-    _page_header("\u2699\ufe0f", "System Status", "Hardware and service health.")
+    _page_header("\u2699\ufe0f", "Settings", "System health, service status, and privacy.")
 
-    last = status.get("last_check_in", datetime.now())
-    mins = int((datetime.now() - last).total_seconds() / 60)
-    time_str = f"{mins}m ago" if mins < 60 else f"{mins // 60}h ago"
+    tab_health, tab_privacy = st.tabs(["Health", "Privacy & Compliance"])
 
-    m = st.columns(4)
-    m[0].metric("Uptime", f"{status.get('uptime_hours', 0):.1f} h")
-    m[1].metric("Alerts today", status.get("total_alerts_today", 0))
-    m[2].metric("Pending", status.get("total_pending", 0))
-    m[3].metric("Escalated", status.get("total_escalated", 0))
-    st.divider()
-
-    cam_ok = status.get("camera_online", False)
-    model_ok = status.get("model_loaded", False)
-    grace = status.get("grace_period_enabled", False)
-
-    c1, c2 = st.columns(2)
-    with c1:
-        with st.status(f"Camera \u2014 {'Online' if cam_ok else 'Offline'}", expanded=False) as s:
-            st.write(f"Last check-in: {time_str}")
-            s.update(label=f"Camera \u2014 {'Online' if cam_ok else 'Offline'}", state="complete" if cam_ok else "error")
-        with st.status("Grace period", expanded=False) as s:
-            st.write("Configurable delay before an alert is considered final.")
-            s.update(label=f"Grace period \u2014 {'Active' if grace else 'Disabled'}", state="complete" if grace else "running")
-        with st.status(f"Email alerts \u2014 {'Active' if status.get('email_enabled') else 'Disabled'}", expanded=False) as s:
-            st.write("Notification channel for fall alerts.")
-            s.update(state="complete" if status.get("email_enabled") else "running")
-        with st.status(f"SMS alerts \u2014 {'Active' if status.get('sms_enabled') else 'Disabled'}", expanded=False) as s:
-            st.write("Notification channel for fall alerts.")
-            s.update(state="complete" if status.get("sms_enabled") else "running")
-    with c2:
-        with st.status(f"ML model \u2014 {'Loaded' if model_ok else 'Error'}", expanded=False) as s:
-            st.write("Pose-estimation model used for fall detection.")
-            s.update(label=f"ML model \u2014 {'Loaded' if model_ok else 'Error'}", state="complete" if model_ok else "error")
-        with st.status("False alarms prevented", expanded=False) as s:
-            st.write(f"{status.get('false_alarms_prevented', 0)} events cancelled by validation.")
-            s.update(label=f"{status.get('false_alarms_prevented', 0)} prevented", state="complete")
-        st.metric("Alerts acknowledged", status.get("total_acknowledged", 0))
-        st.metric("Alerts pending", status.get("total_pending", 0))
-
-# ═══════════════════════════════════════════════════════════════════════════════
-# PRIVACY PAGE
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def render_privacy_page():
-    _page_header("\U0001f512", "Privacy Center", "Data protection and compliance.")
-
-    c1, c2 = st.columns([3, 2])
-    with c1:
-        st.subheader("Privacy-first design")
-        st.markdown(
-            "- **No video storage** \u2014 raw frames are never saved to disk.\n"
-            "- **No video transmission** \u2014 no video leaves the device.\n"
-            "- **Pose-only processing** \u2014 only numeric keypoints (33 points) are analyzed.\n"
-            "- **Alert-only output** \u2014 only text alerts are sent when a fall is detected.\n"
-            "- **Local processing** \u2014 all analysis runs on-device.\n"
-            "- **Minimal logging** \u2014 only alert timestamps and outcomes are stored."
-        )
+    with tab_health:
+        # ─── Health KPIs ────────────────────────────────────────────────────
+        uptime_h = status.get("uptime_hours", 0.0)
+        uptime_str = f"{uptime_h:.1f} h" if uptime_h > 0 else "n/a"
+        m = st.columns(4)
+        m[0].metric("Uptime", uptime_str)
+        m[1].metric("Alerts today", status.get("total_alerts_today", 0))
+        m[2].metric("Pending", status.get("total_pending", 0))
+        m[3].metric("Escalated", status.get("total_escalated", 0))
         st.divider()
-        st.info("Recording is opt-in, admin-only, and auto-deletes after the retention window.")
 
-    with c2:
-        st.subheader("Compliance")
-        with st.status("GDPR compliant", expanded=False) as s:
-            st.write("Minimal data collection, on-device processing.")
-            s.update(state="complete")
-        with st.status("HIPAA ready", expanded=False) as s:
-            st.write("Suitable for protected health information environments.")
-            s.update(state="complete")
+        cam_ok = status.get("camera_online", False)
+        cam_available = status.get("camera_available", False)
+        model_ok = status.get("model_loaded", False)
+        grace = status.get("grace_period_enabled", False)
+        email_ok = status.get("email_enabled", False)
+        sms_ok = status.get("sms_enabled", False)
+
+        c1, c2 = st.columns(2)
+        with c1:
+            cam_label = "Camera \u2014 Online" if cam_ok else ("Camera \u2014 No feed" if cam_available else "Camera \u2014 Offline")
+            with st.status(f"Camera \u2014 {'Online' if cam_ok else 'Offline'}", expanded=False) as s:
+                if cam_ok:
+                    st.write(f"Live feed available ({cam_available}).")
+                else:
+                    st.write("No local camera feed detected. The stream server may be offline or using a video source.")
+                s.update(label=cam_label, state="complete" if cam_ok else ("running" if cam_available else "error"))
+            with st.status("Grace period", expanded=False) as s:
+                st.write("Configurable delay before an alert is considered final.")
+                s.update(label=f"Grace period \u2014 {'Active' if grace else 'Disabled'}", state="complete" if grace else "running")
+            with st.status("Email alerts", expanded=False) as s:
+                st.write("Notification channel for fall alerts.")
+                s.update(label=f"Email \u2014 {'Configured' if email_ok else 'Not configured'}",
+                         state="complete" if email_ok else "running")
+            with st.status("SMS alerts", expanded=False) as s:
+                st.write("Optional SMS notification channel.")
+                s.update(label=f"SMS \u2014 {'Active' if sms_ok else 'Disabled'}",
+                         state="complete" if sms_ok else "running")
+        with c2:
+            with st.status("ML model", expanded=False) as s:
+                st.write("Pose-estimation model used for fall detection.")
+                s.update(label=f"ML model \u2014 {'Loaded' if model_ok else 'Not loaded'}",
+                         state="complete" if model_ok else "error")
+            with st.status("False alarms prevented", expanded=False) as s:
+                st.write(f"{status.get('false_alarms_prevented', 0)} events cancelled by validation.")
+                s.update(label=f"{status.get('false_alarms_prevented', 0)} prevented", state="complete")
+            st.metric("Alerts acknowledged", status.get("total_acknowledged", 0))
+            st.metric("Alerts pending", status.get("total_pending", 0))
+
+    with tab_privacy:
+        c1, c2 = st.columns([3, 2])
+        with c1:
+            st.subheader("Privacy-first design")
+            st.markdown(
+                "- **No video storage** \u2014 raw frames are never saved to disk.\n"
+                "- **No video transmission** \u2014 no video leaves the device.\n"
+                "- **Pose-only processing** \u2014 only numeric keypoints (33 points) are analyzed.\n"
+                "- **Alert-only output** \u2014 only text alerts are sent when a fall is detected.\n"
+                "- **Local processing** \u2014 all analysis runs on-device.\n"
+                "- **Minimal logging** \u2014 only alert timestamps and outcomes are stored."
+            )
+            st.divider()
+            st.info("Recording is opt-in, admin-only, and auto-deletes after the retention window.")
+
+        with c2:
+            st.subheader("Compliance")
+            with st.status("GDPR compliant", expanded=False) as s:
+                st.write("Minimal data collection, on-device processing.")
+                s.update(state="complete")
+            with st.status("HIPAA ready", expanded=False) as s:
+                st.write("Suitable for protected health information environments.")
+                s.update(state="complete")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN — native navigation router (+ test override via FG_PAGE env)
@@ -1385,8 +1523,7 @@ _PAGE_RUNNERS = {
     "alerts": render_alerts_page,
     "live": render_live_monitor,
     "analytics": render_analytics,
-    "system": render_system_status_page,
-    "privacy": render_privacy_page,
+    "settings": render_settings_page,
 }
 
 
@@ -1437,18 +1574,12 @@ def main():
                 st.Page(render_analytics, title="Analytics", icon="\U0001f4ca", url_path="analytics"),
             ],
             "System": [
-                st.Page(render_system_status_page, title="System", icon="\u2699\ufe0f", url_path="system"),
-                st.Page(render_privacy_page, title="Privacy", icon="\U0001f512", url_path="privacy"),
+                st.Page(render_settings_page, title="Settings", icon="\u2699\ufe0f", url_path="settings"),
             ],
         }, position="sidebar")
         render_sidebar_user(user)
 
     current_page_title = nav.title
-    if current_page_title != "Live Monitor" and cache_control["refresh_interval"] > 0:
-        if time.time() - cache_control["last_refresh"] >= cache_control["refresh_interval"]:
-            cache_control["last_refresh"] = time.time()
-            st.rerun()
-
     _render_toolbar(current_page_title, user)
     _maybe_render_export()
     nav.run()

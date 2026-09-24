@@ -129,6 +129,47 @@ class StreamServer:
         self._camera = cam
         self._camera_owner = False
 
+    def get_camera(self):
+        """Return the active camera instance (may be None until first request)."""
+        return self._camera
+
+    def ensure_camera(self):
+        """Ensure a camera is open (lazily re-opens after a source switch)."""
+        self._ensure_camera()
+        return self._camera
+
+    def switch_source(self, source) -> None:
+        """Swap the camera source at runtime (webcam index | file path | RTSP).
+
+        Stops the currently owned camera (and any active recording) so the next
+        request lazily re-opens the new source via `_ensure_camera()`.
+        """
+        import logging as _logging
+        _logging.getLogger(__name__).info(f"Switching camera source to: {source}")
+        if isinstance(source, str):
+            self.config.setdefault("camera", {})["source"] = source
+        else:
+            self.config.setdefault("camera", {})["source"] = int(source)
+        if self._recording_started:
+            try:
+                if self._camera is not None:
+                    self._camera.stop_recording()
+            except Exception:
+                pass
+            self._recording_started = False
+        if self._camera_owner and self._camera is not None:
+            try:
+                self._camera.stop()
+            except Exception:
+                pass
+        self._camera = None
+        metrics.update(
+            camera_available=False,
+            camera_online=False,
+            recording_active=False,
+            source=self.config.get("camera", {}).get("source", source),
+        )
+
     def _ensure_camera(self):
         """Lazily open a camera (or synthetic fallback) owned by the server."""
         if self._camera is not None:
@@ -231,6 +272,8 @@ class StreamServer:
                     server._handle_record_start(self)
                 elif self.path.split("?", 1)[0] == "/record/stop":
                     server._handle_record_stop(self)
+                elif self.path.split("?", 1)[0] == "/source":
+                    server._handle_source_switch(self)
                 else:
                     self.send_response(404)
                     self.end_headers()
@@ -327,6 +370,7 @@ class StreamServer:
             camera_available=True,
             fps=round(fps, 2),
             recording_active=self._recording_started,
+            source=self.config.get("camera", {}).get("source", None),
         )
         payload = json.dumps(metrics.format_summary()).encode()
         handler.send_response(200)
@@ -371,6 +415,35 @@ class StreamServer:
             )
         except Exception as e:
             self._respond_json(handler, 500, {"ok": False, "error": str(e)})
+
+    def _handle_source_switch(self, handler: BaseHTTPRequestHandler):
+        """Switch camera source from JSON body or query string (?source=...)."""
+        import urllib.parse
+        source = None
+        try:
+            length = int(handler.headers.get("Content-Length") or 0)
+            if length > 0:
+                raw = handler.rfile.read(length).decode("utf-8")
+                try:
+                    source = json.loads(raw).get("source")
+                except Exception:
+                    qs = urllib.parse.parse_qs(raw)
+                    source = (qs.get("source") or [None])[0]
+        except Exception:
+            source = None
+        if source is None and "?" in handler.path:
+            qs = urllib.parse.parse_qs(handler.path.split("?", 1)[1])
+            source = (qs.get("source") or [None])[0]
+        if source is None:
+            self._respond_json(handler, 400, {"ok": False, "error": "missing source"})
+            return
+        if isinstance(source, str) and source.isdigit():
+            source = int(source)
+        self.switch_source(source)
+        self._respond_json(
+            handler, 200,
+            {"ok": True, "source": self.config.get("camera", {}).get("source")},
+        )
 
     def _handle_record_stop(self, handler: BaseHTTPRequestHandler):
         cam = self._camera

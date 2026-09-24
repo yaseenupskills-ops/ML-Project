@@ -28,6 +28,7 @@ _state = {
     "recorded_segments": 0,
     "recording_active": False,
     "last_frame_ts": None,
+    "source": None,
     "started_at": time.time(),
     "last_update": 0.0,
 }
