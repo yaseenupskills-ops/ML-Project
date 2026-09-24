@@ -8,13 +8,13 @@ A privacy-preserving fall detection system that processes webcam/CCTV feeds enti
 - **Grace period**: 20-second confirmation window to cancel false alarms
 - **Multi-signal fusion**: Combines velocity, stillness, and orientation features
 - **Subject-independent evaluation**: Train/test split by actor ID to prevent data leakage
-- **Alert history dashboard**: Minimal Streamlit UI showing past alerts only
+- **FastAPI backend**: Single-origin HTTP API (alerts, analytics, live feed, recordings) for a separately-built frontend
 
 ## System Overview
 ```
 [Webcam Feed] → [MediaPipe Pose] → [Feature Engineering] → 
 [Classification (RF/CNN-LSTM)] → [Decision Logic] → 
-[Grace Period] → [Alert (Email/SMS)] → [Dashboard]
+[Grace Period] → [Alert (Email/SMS)] → [FastAPI backend] → [Frontend]
 ```
 
 ## Privacy Guarantees
@@ -45,8 +45,11 @@ fall-detection/
 ├── alert.py                 # Email/SMS alerting
 ├── simulate_stream.py       # End-to-end pipeline test
 ├── evaluate.py              # Subject-independent evaluation
-├── dashboard/
-│   └── app.py               # Streamlit alert history viewer
+├── camera.py                # Camera/video-file/RTSP frame sources
+├── metrics.py               # In-memory live metrics store
+├── services/                # Non-UI business logic (alerts, analytics, recordings, roles)
+├── api/
+│   └── main.py              # FastAPI app (see API.md for the frontend contract)
 └── report/
     └── report.md            # Methodology, results, limitations
 ```
@@ -90,9 +93,11 @@ fall-detection/
    # Test end-to-end with simulation
    python simulate_stream.py data/processed/keypoints/ models/rf_baseline.joblib
    
-   # Launch dashboard (shows alert history only)
-   streamlit run dashboard/app.py
+   # Launch the API (binds 127.0.0.1 by default -- video stays on-device)
+   uvicorn api.main:app --host 127.0.0.1 --port 8000
    ```
+   OpenAPI docs: http://127.0.0.1:8000/docs. Endpoint reference: see `API.md`
+   (a separately-built frontend talks to this API only).
 
 ## Requirements
 - Python 3.10+ (tested on 3.14 with Apple Silicon MPS)
