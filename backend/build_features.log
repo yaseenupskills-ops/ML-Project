@@ -1,0 +1,231 @@
+Found 70 videos
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+W0000 00:00:1790285281.864351   25724 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1790285281.883240   27968 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+INFO:pose_extraction:PoseExtractor initialized: frame_stride=2, smooth_window=3, min_confidence=0.5
+[1/70] adl-01-cam0...
+W0000 00:00:1790285282.480221   29276 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-01-cam0
+  ok: adl-01-cam0 -> 1 windows (label=0)
+[2/70] adl-02-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-02-cam0
+  ok: adl-02-cam0 -> 1 windows (label=0)
+[3/70] adl-03-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-03-cam0
+  ok: adl-03-cam0 -> 1 windows (label=0)
+[4/70] adl-04-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 2 feature windows for S1/adl-04-cam0
+  ok: adl-04-cam0 -> 2 windows (label=0)
+[5/70] adl-05-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 3 feature windows for S1/adl-05-cam0
+  ok: adl-05-cam0 -> 3 windows (label=0)
+[6/70] adl-06-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 2 feature windows for S1/adl-06-cam0
+  ok: adl-06-cam0 -> 2 windows (label=0)
+[7/70] adl-07-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 3 feature windows for S1/adl-07-cam0
+  ok: adl-07-cam0 -> 3 windows (label=0)
+[8/70] adl-08-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 2 feature windows for S1/adl-08-cam0
+  ok: adl-08-cam0 -> 2 windows (label=0)
+[9/70] adl-09-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 2 feature windows for S1/adl-09-cam0
+  ok: adl-09-cam0 -> 2 windows (label=0)
+[10/70] adl-10-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 6 feature windows for S1/adl-10-cam0
+  ok: adl-10-cam0 -> 6 windows (label=0)
+[11/70] adl-11-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 5 feature windows for S1/adl-11-cam0
+  ok: adl-11-cam0 -> 5 windows (label=0)
+[12/70] adl-12-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 3 feature windows for S1/adl-12-cam0
+  ok: adl-12-cam0 -> 3 windows (label=0)
+[13/70] adl-13-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 3 feature windows for S1/adl-13-cam0
+  ok: adl-13-cam0 -> 3 windows (label=0)
+[14/70] adl-14-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 2 feature windows for S1/adl-14-cam0
+  ok: adl-14-cam0 -> 2 windows (label=0)
+[15/70] adl-15-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 2 feature windows for S1/adl-15-cam0
+  ok: adl-15-cam0 -> 2 windows (label=0)
+[16/70] adl-16-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-16-cam0
+  ok: adl-16-cam0 -> 1 windows (label=0)
+[17/70] adl-17-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 3 feature windows for S1/adl-17-cam0
+  ok: adl-17-cam0 -> 3 windows (label=0)
+[18/70] adl-18-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): adl-18-cam0
+[19/70] adl-19-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-19-cam0
+  ok: adl-19-cam0 -> 1 windows (label=0)
+[20/70] adl-20-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-20-cam0
+  ok: adl-20-cam0 -> 1 windows (label=0)
+[21/70] adl-21-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-21-cam0
+  ok: adl-21-cam0 -> 1 windows (label=0)
+[22/70] adl-22-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): adl-22-cam0
+[23/70] adl-23-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): adl-23-cam0
+[24/70] adl-24-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-24-cam0
+  ok: adl-24-cam0 -> 1 windows (label=0)
+[25/70] adl-25-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-25-cam0
+  ok: adl-25-cam0 -> 1 windows (label=0)
+[26/70] adl-26-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 2 feature windows for S1/adl-26-cam0
+  ok: adl-26-cam0 -> 2 windows (label=0)
+[27/70] adl-27-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 2 feature windows for S1/adl-27-cam0
+  ok: adl-27-cam0 -> 2 windows (label=0)
+[28/70] adl-28-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-28-cam0
+  ok: adl-28-cam0 -> 1 windows (label=0)
+[29/70] adl-29-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 3 feature windows for S1/adl-29-cam0
+  ok: adl-29-cam0 -> 3 windows (label=0)
+[30/70] adl-30-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 2 feature windows for S1/adl-30-cam0
+  ok: adl-30-cam0 -> 2 windows (label=0)
+[31/70] adl-31-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 4 feature windows for S1/adl-31-cam0
+  ok: adl-31-cam0 -> 4 windows (label=0)
+[32/70] adl-32-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 3 feature windows for S1/adl-32-cam0
+  ok: adl-32-cam0 -> 3 windows (label=0)
+[33/70] adl-33-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-33-cam0
+  ok: adl-33-cam0 -> 1 windows (label=0)
+[34/70] adl-34-cam0...
+E0000 00:00:1790285402.350410    2520 portable_clearcut_uploader.cc:90] Failed to send to clearcut: FAILED_PRECONDITION: Not valid for uploading until: 2026-09-24T21:44:02.338720987+00:00
+=== Source Location Trace: ===
+wireless/android/play/playlog/cplusplus/portable_clearcut_uploader.cc:180
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-34-cam0
+  ok: adl-34-cam0 -> 1 windows (label=0)
+[35/70] adl-35-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 3 feature windows for S1/adl-35-cam0
+  ok: adl-35-cam0 -> 3 windows (label=0)
+[36/70] adl-36-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 5 feature windows for S1/adl-36-cam0
+  ok: adl-36-cam0 -> 5 windows (label=0)
+[37/70] adl-37-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 4 feature windows for S1/adl-37-cam0
+  ok: adl-37-cam0 -> 4 windows (label=0)
+[38/70] adl-38-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+INFO:features:Extracted 1 feature windows for S1/adl-38-cam0
+  ok: adl-38-cam0 -> 1 windows (label=0)
+[39/70] adl-39-cam0...
+Found 70 videos
+Resuming: 56 clips already in data\processed\features.csv
+INFO: Created TensorFlow Lite XNNPACK delegate for CPU.
+W0000 00:00:1790285471.831334   28928 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+W0000 00:00:1790285471.849016   40748 inference_feedback_manager.cc:121] Feedback manager requires a model with a single signature inference. Disabling support for feedback tensors.
+INFO:pose_extraction:PoseExtractor initialized: frame_stride=2, smooth_window=3, min_confidence=0.5
+[1/70] fall-01-cam0...
+W0000 00:00:1790285471.932775   28928 landmark_projection_calculator.cc:81] Using NORM_RECT without IMAGE_DIMENSIONS is only supported for the square ROI. Provide IMAGE_DIMENSIONS or use PROJECTION_MATRIX.
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-01-cam0
+[5/70] fall-05-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-05-cam0
+[14/70] fall-14-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-14-cam0
+[15/70] fall-15-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-15-cam0
+[16/70] fall-16-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-16-cam0
+[18/70] fall-18-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-18-cam0
+[21/70] fall-21-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-21-cam0
+[22/70] fall-22-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-22-cam0
+[24/70] fall-24-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-24-cam0
+[26/70] fall-26-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-26-cam0
+[30/70] fall-30-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): fall-30-cam0
+[48/70] adl-18-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): adl-18-cam0
+[52/70] adl-22-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): adl-22-cam0
+[53/70] adl-23-cam0...
+INFO:features:FeatureEngineer initialized: window=2.0s, overlap=0.5, fps=15.0
+WARNING:features:No features extracted - check window parameters
+  skip (no windows): adl-23-cam0
+Total in data\processed\features.csv: 162 feature windows from 56 clips
+Label distribution:
+label
+0    129
+1     33
+Name: count, dtype: int64

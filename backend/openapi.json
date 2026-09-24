@@ -1,0 +1,884 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "FallGuard",
+    "version": "1.0"
+  },
+  "paths": {
+    "/api/v1/auth/login": {
+      "post": {
+        "summary": "Login",
+        "operationId": "login_api_v1_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AuthLoginData"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "summary": "Refresh",
+        "operationId": "refresh_api_v1_auth_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "summary": "Logout",
+        "operationId": "logout_api_v1_auth_logout_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/me": {
+      "get": {
+        "summary": "Get Me",
+        "operationId": "get_me_api_v1_auth_me_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/summary": {
+      "get": {
+        "summary": "Get Analytics Summary",
+        "operationId": "get_analytics_summary_api_v1_analytics_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AnalyticsSummary"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events": {
+      "get": {
+        "summary": "Get Events",
+        "operationId": "get_events_api_v1_events_get",
+        "parameters": [
+          {
+            "name": "state",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "State"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedEvents"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/events/{id}": {
+      "get": {
+        "summary": "Get Event",
+        "operationId": "get_event_api_v1_events__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Event"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/alerts": {
+      "get": {
+        "summary": "Get Alerts",
+        "operationId": "get_alerts_api_v1_alerts_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PaginatedAlerts"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Alert": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "notification_status": {
+            "type": "string",
+            "title": "Notification Status"
+          },
+          "acknowledged_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged By"
+          },
+          "acknowledged_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Acknowledged At"
+          },
+          "response_time_s": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Response Time S"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "status",
+          "notification_status",
+          "acknowledged_by",
+          "acknowledged_at",
+          "response_time_s"
+        ],
+        "title": "Alert"
+      },
+      "AnalyticsSummary": {
+        "properties": {
+          "total_events": {
+            "type": "integer",
+            "title": "Total Events"
+          },
+          "confirmed": {
+            "type": "integer",
+            "title": "Confirmed"
+          },
+          "cancelled": {
+            "type": "integer",
+            "title": "Cancelled"
+          },
+          "alerts_open": {
+            "type": "integer",
+            "title": "Alerts Open"
+          },
+          "alerts_acknowledged": {
+            "type": "integer",
+            "title": "Alerts Acknowledged"
+          },
+          "alerts_dismissed": {
+            "type": "integer",
+            "title": "Alerts Dismissed"
+          },
+          "alerts_escalated": {
+            "type": "integer",
+            "title": "Alerts Escalated"
+          },
+          "response_time_avg_s": {
+            "type": "number",
+            "title": "Response Time Avg S"
+          },
+          "response_time_median_s": {
+            "type": "number",
+            "title": "Response Time Median S"
+          },
+          "response_time_p95_s": {
+            "type": "number",
+            "title": "Response Time P95 S"
+          },
+          "notification_failures": {
+            "type": "integer",
+            "title": "Notification Failures"
+          },
+          "false_positive_feedback_count": {
+            "type": "integer",
+            "title": "False Positive Feedback Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_events",
+          "confirmed",
+          "cancelled",
+          "alerts_open",
+          "alerts_acknowledged",
+          "alerts_dismissed",
+          "alerts_escalated",
+          "response_time_avg_s",
+          "response_time_median_s",
+          "response_time_p95_s",
+          "notification_failures",
+          "false_positive_feedback_count"
+        ],
+        "title": "AnalyticsSummary"
+      },
+      "AuthLoginData": {
+        "properties": {
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "password": {
+            "type": "string",
+            "title": "Password"
+          }
+        },
+        "type": "object",
+        "required": [
+          "email",
+          "password"
+        ],
+        "title": "AuthLoginData"
+      },
+      "DeviceInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "device_name": {
+            "type": "string",
+            "title": "Device Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "device_name"
+        ],
+        "title": "DeviceInfo"
+      },
+      "Event": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "state": {
+            "type": "string",
+            "title": "State"
+          },
+          "detected_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Detected At"
+          },
+          "grace_deadline": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Grace Deadline"
+          },
+          "resolved_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved At"
+          },
+          "resolved_by": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resolved By"
+          },
+          "subject": {
+            "$ref": "#/components/schemas/SubjectInfo"
+          },
+          "device": {
+            "$ref": "#/components/schemas/DeviceInfo"
+          },
+          "confidence": {
+            "type": "number",
+            "title": "Confidence"
+          },
+          "confidence_calibrated": {
+            "type": "boolean",
+            "title": "Confidence Calibrated"
+          },
+          "tier": {
+            "type": "string",
+            "title": "Tier"
+          },
+          "track_id": {
+            "type": "integer",
+            "title": "Track Id"
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version"
+          },
+          "feature_version": {
+            "type": "string",
+            "title": "Feature Version"
+          },
+          "pose_quality": {
+            "type": "number",
+            "title": "Pose Quality"
+          },
+          "evidence": {
+            "$ref": "#/components/schemas/Evidence"
+          },
+          "alert": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Alert"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "notifications": {
+            "items": {
+              "$ref": "#/components/schemas/Notification"
+            },
+            "type": "array",
+            "title": "Notifications"
+          },
+          "feedback": {
+            "items": {
+              "$ref": "#/components/schemas/Feedback"
+            },
+            "type": "array",
+            "title": "Feedback"
+          },
+          "timeline": {
+            "items": {
+              "$ref": "#/components/schemas/TimelineEvent"
+            },
+            "type": "array",
+            "title": "Timeline"
+          },
+          "server_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "state",
+          "detected_at",
+          "grace_deadline",
+          "resolved_at",
+          "resolved_by",
+          "subject",
+          "device",
+          "confidence",
+          "confidence_calibrated",
+          "tier",
+          "track_id",
+          "model_version",
+          "feature_version",
+          "pose_quality",
+          "evidence",
+          "alert",
+          "notifications",
+          "feedback",
+          "timeline",
+          "server_time"
+        ],
+        "title": "Event"
+      },
+      "Evidence": {
+        "properties": {
+          "rapid_motion": {
+            "type": "boolean",
+            "title": "Rapid Motion"
+          },
+          "orientation_change": {
+            "type": "number",
+            "title": "Orientation Change"
+          },
+          "body_height_change": {
+            "type": "number",
+            "title": "Body Height Change"
+          },
+          "post_event_stillness": {
+            "type": "boolean",
+            "title": "Post Event Stillness"
+          },
+          "evidence_summary": {
+            "type": "string",
+            "title": "Evidence Summary"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rapid_motion",
+          "orientation_change",
+          "body_height_change",
+          "post_event_stillness",
+          "evidence_summary"
+        ],
+        "title": "Evidence"
+      },
+      "Feedback": {
+        "properties": {
+          "caregiver_id": {
+            "type": "string",
+            "title": "Caregiver Id"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "caregiver_id",
+          "label",
+          "comment",
+          "created_at"
+        ],
+        "title": "Feedback"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "Notification": {
+        "properties": {
+          "channel": {
+            "type": "string",
+            "title": "Channel"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "attempt_count": {
+            "type": "integer",
+            "title": "Attempt Count"
+          },
+          "last_attempt_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Attempt At"
+          },
+          "error_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error Code"
+          }
+        },
+        "type": "object",
+        "required": [
+          "channel",
+          "kind",
+          "status",
+          "attempt_count",
+          "last_attempt_at",
+          "error_code"
+        ],
+        "title": "Notification"
+      },
+      "PaginatedAlerts": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "server_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "server_time"
+        ],
+        "title": "PaginatedAlerts"
+      },
+      "PaginatedEvents": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            },
+            "type": "array",
+            "title": "Items"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "server_time": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Server Time"
+          }
+        },
+        "type": "object",
+        "required": [
+          "items",
+          "total",
+          "server_time"
+        ],
+        "title": "PaginatedEvents"
+      },
+      "SubjectInfo": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "display_name": {
+            "type": "string",
+            "title": "Display Name"
+          },
+          "location_label": {
+            "type": "string",
+            "title": "Location Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "display_name",
+          "location_label"
+        ],
+        "title": "SubjectInfo"
+      },
+      "TimelineEvent": {
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "At"
+          },
+          "actor": {
+            "type": "string",
+            "title": "Actor"
+          },
+          "action": {
+            "type": "string",
+            "title": "Action"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "at",
+          "actor",
+          "action",
+          "note"
+        ],
+        "title": "TimelineEvent"
+      },
+      "UserResponse": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "must_change_password": {
+            "type": "boolean",
+            "title": "Must Change Password"
+          },
+          "assigned_subject_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Assigned Subject Ids"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email",
+          "role",
+          "must_change_password",
+          "assigned_subject_ids"
+        ],
+        "title": "UserResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}
