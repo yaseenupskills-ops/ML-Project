@@ -1,7 +1,9 @@
 """FastAPI service exposing the fall-detection backend.
 
 Replaces dashboard/app.py (UI removed, business logic now in services/) and
-stream_server.py (routes ported below so the frontend has a single origin).
+stream_server.py (routes ported below so the frontend has a single origin;
+camera lifecycle now lives in services/camera_service.py, so stream_server.py
+itself is no longer imported anywhere and has been deleted).
 Run with: uvicorn api.main:app --host 127.0.0.1 --port 8000
 """
 from __future__ import annotations
@@ -21,9 +23,9 @@ from pydantic import BaseModel
 
 import camera as camera_module
 import metrics
-import stream_server
 from services import alerts_service, analytics_service, recordings_service
 from services.alert_repository import JsonlAlertRepository
+from services.camera_service import BOUNDARY, CameraState
 from services.roles import get_current_user, get_user_permissions, filter_by_role
 
 CONFIG_PATH = "config.yaml"
@@ -33,7 +35,7 @@ _ACTION_TO_PERM = {"acknowledge": "can_acknowledge", "dismiss": "can_dismiss", "
 
 def _load_config() -> dict:
     try:
-        with open(CONFIG_PATH, "r") as f:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as f:
             return yaml.safe_load(f) or {}
     except Exception:
         return {}
@@ -81,11 +83,7 @@ def _df_to_records(df: pd.DataFrame) -> List[dict]:
     return d.to_dict(orient="records")
 
 
-# ponytail: stream_server.py's own http.server is never started here -- FastAPI
-# is the single origin the frontend talks to. We reuse StreamServer only for its
-# camera lifecycle (lazy open, SyntheticFrameSource fallback) and recording
-# state until stream_server.py is deleted post-parity-check.
-_stream: Optional[stream_server.StreamServer] = None
+_stream: Optional[CameraState] = None
 
 
 @asynccontextmanager
@@ -93,20 +91,11 @@ async def lifespan(app: FastAPI):
     global _stream
     cfg = _stream_server_config()
     if cfg.get("enabled", True):
-        _stream = stream_server.StreamServer(cfg)
-        _stream._ensure_camera()
+        _stream = CameraState(cfg)
+        _stream.ensure_camera()
     yield
     if _stream is not None:
-        try:
-            if _stream._recording_started and _stream._camera is not None:
-                _stream._camera.stop_recording()
-        except Exception:
-            pass
-        try:
-            if _stream._camera_owner and _stream._camera is not None:
-                _stream._camera.stop()
-        except Exception:
-            pass
+        _stream.stop()
 
 
 app = FastAPI(title="FallGuard AI API", lifespan=lifespan)
@@ -120,7 +109,7 @@ app.add_middleware(
 )
 
 
-def _require_stream() -> "stream_server.StreamServer":
+def _require_stream() -> CameraState:
     if _stream is None:
         raise HTTPException(status_code=503, detail="Streaming disabled (streaming.enabled: false in config.yaml)")
     return _stream
@@ -286,7 +275,7 @@ class MeResponse(BaseModel):
 
 @app.get("/health", response_model=HealthResponse)
 def health():
-    cam_ok = _stream is not None and _stream._camera is not None
+    cam_ok = _stream is not None and _stream.camera is not None
     metrics.update(camera_online=cam_ok)
     return HealthResponse(status="ok" if cam_ok else "degraded", camera=cam_ok, time=time.time())
 
@@ -294,12 +283,12 @@ def health():
 @app.get("/metrics", response_model=MetricsResponse)
 def get_metrics():
     srv = _require_stream()
-    fps = getattr(srv._camera, "get_fps", lambda: 0.0)() if srv._camera is not None else 0.0
+    fps = getattr(srv.camera, "get_fps", lambda: 0.0)() if srv.camera is not None else 0.0
     metrics.update(
-        camera_online=srv._camera is not None,
-        camera_available=srv._camera is not None,
+        camera_online=srv.camera is not None,
+        camera_available=srv.camera is not None,
         fps=round(fps, 2),
-        recording_active=srv._recording_started,
+        recording_active=srv.recording_started,
     )
     return metrics.format_summary()
 
@@ -397,9 +386,9 @@ def analytics_export_csv(user: dict = Depends(get_current_user)):
 @app.get("/recordings", response_model=List[RecordingOut])
 def get_recordings(user: dict = Depends(get_current_user)):
     srv = _require_stream()
-    recs = recordings_service.list_recordings(srv._rec_path)
+    recs = recordings_service.list_recordings(srv.rec_path)
     df = _role_filtered_history(user)
-    mapping = recordings_service.map_alerts_to_recordings(df, recs, srv._segment_duration)
+    mapping = recordings_service.map_alerts_to_recordings(df, recs, srv.segment_duration)
     for r in recs:
         r["alerts"] = mapping.get(r["name"], [])
     return recs
@@ -408,7 +397,7 @@ def get_recordings(user: dict = Depends(get_current_user)):
 @app.get("/recordings/{name}/info", response_model=RecordingInfoResponse)
 def get_recording_info(name: str):
     srv = _require_stream()
-    info = recordings_service.recording_info(srv._rec_path, name)
+    info = recordings_service.recording_info(srv.rec_path, name)
     if info is None:
         raise HTTPException(status_code=404, detail="not found")
     return info
@@ -417,7 +406,7 @@ def get_recording_info(name: str):
 @app.get("/recordings/{name}/video")
 def get_recording_video(name: str):
     srv = _require_stream()
-    p = recordings_service.safe_recording_path(srv._rec_path, name)
+    p = recordings_service.safe_recording_path(srv.rec_path, name)
     if p is None:
         raise HTTPException(status_code=404, detail="not found")
     return FileResponse(str(p), media_type="video/mp4", filename=p.name)
@@ -427,16 +416,16 @@ def get_recording_video(name: str):
 def record_start():
     """Opt-in recording to disk; ported from stream_server._handle_record_start (353-373)."""
     srv = _require_stream()
-    if srv._camera is None:
+    if srv.camera is None:
         return RecordActionResponse(ok=False, recording=False, error="no source")
     try:
-        ok = srv._camera.start_recording(
-            srv._rec_path, segment_duration=srv._segment_duration, max_days=srv._max_days
+        ok = srv.camera.start_recording(
+            srv.rec_path, segment_duration=srv.segment_duration, max_days=srv.max_days
         )
-        srv._recording_started = ok
-        segs = len(srv._camera.list_recordings(srv._rec_path))
+        srv.recording_started = ok
+        segs = len(srv.camera.list_recordings(srv.rec_path))
         metrics.update(recording_active=ok, recorded_segments=segs)
-        return RecordActionResponse(ok=ok, recording=ok, path=str(srv._rec_path))
+        return RecordActionResponse(ok=ok, recording=ok, path=str(srv.rec_path))
     except Exception as e:
         return RecordActionResponse(ok=False, recording=False, error=str(e))
 
@@ -444,12 +433,12 @@ def record_start():
 @app.post("/record/stop", response_model=RecordActionResponse)
 def record_stop():
     srv = _require_stream()
-    if srv._camera is not None:
+    if srv.camera is not None:
         try:
-            srv._camera.stop_recording()
+            srv.camera.stop_recording()
         except Exception:
             pass
-    srv._recording_started = False
+    srv.recording_started = False
     metrics.update(recording_active=False)
     return RecordActionResponse(ok=True, recording=False)
 
@@ -462,11 +451,11 @@ def video_feed():
     srv = _require_stream()
 
     def gen():
-        for chunk in srv._camera.generate_mjpeg_stream(quality=srv.jpeg_quality, max_fps=srv.max_fps):
+        for chunk in srv.camera.generate_mjpeg_stream(quality=srv.jpeg_quality, max_fps=srv.max_fps):
             metrics.update(last_frame_ts=time.time())
             yield chunk
 
-    return StreamingResponse(gen(), media_type=f"multipart/x-mixed-replace; boundary={stream_server.BOUNDARY}")
+    return StreamingResponse(gen(), media_type=f"multipart/x-mixed-replace; boundary={BOUNDARY}")
 
 
 @app.get("/frame")
@@ -475,7 +464,7 @@ def frame():
     srv = _require_stream()
     fr = None
     for _ in range(5):
-        fr = srv._camera.read_frame()
+        fr = srv.camera.read_frame()
         if fr is not None:
             break
         time.sleep(0.1)

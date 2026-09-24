@@ -28,13 +28,13 @@ Privacy-preserving fall detection for elderly care. Webcam → MediaPipe Pose �
 ## Verification Commands (run in order)
 ```bash
 # Compile check
-python -m py_compile api/main.py services/*.py alert.py stream_server.py simulate_stream.py metrics.py grace_period.py camera.py
+python -m py_compile api/main.py services/*.py alert.py simulate_stream.py metrics.py grace_period.py camera.py
 
 # Test suite
 PYTHONPATH=. python tests/test_system.py
 
 # Lint (pyflakes)
-python -m pyflakes api/main.py services/*.py stream_server.py
+python -m pyflakes api/main.py services/*.py
 ```
 
 ## Demo Mode (for live presentation)
@@ -55,7 +55,7 @@ cp /tmp/config.yaml.bak config.yaml
 - **Grace period timing**: wall-clock based (20s). Video file playback throttles to **native FPS** (`video_fps` in `VideoFileCamera._capture_loop`), not config target FPS, to keep alert timing correct.
 - **Camera factory**: `camera.create_camera(source)` routes int→CameraManager, file→VideoFileCamera (pops `loop`/`real_time` kwargs for webcam/RTSP), rtsp://→CameraManagerRTSP.
 - **Business logic layer** (`services/`): `alerts_service.py` (load/filter/ack/dismiss/escalate/auto-escalate), `recordings_service.py` (alert↔recording mapping, video metadata), `analytics_service.py` (all analytics math), `roles.py` (`get_current_user()` dependency + role filtering), `alert_repository.py` (JSONL storage behind an `AlertRepository` interface).
-- **API** (`api/main.py`): single FastAPI app, one origin. All `stream_server.py` routes (MJPEG on `/video_feed`, `/metrics`, `/recordings`, record start/stop) are re-exposed as FastAPI endpoints; `stream_server.py`'s own `http.server` is never started (its `StreamServer` class is reused only for camera lifecycle until the file is deleted post-parity). Binds 127.0.0.1 by default (privacy). CORS restricted to `FRONTEND_ORIGIN` env var (default `http://localhost:3000`). See `API.md` for the full contract.
+- **API** (`api/main.py`): single FastAPI app, one origin. All routes formerly served by the now-deleted `stream_server.py` (MJPEG on `/video_feed`, `/frame`, `/metrics`, `/health`, `/recordings`, record start/stop) are FastAPI endpoints; camera lifecycle (lazy open, `SyntheticFrameSource` fallback) lives in `services/camera_service.py`. Binds 127.0.0.1 by default (privacy). CORS restricted to `FRONTEND_ORIGIN` env var (default `http://localhost:3000`). See `API.md` for the full contract.
 
 ## Privacy Constraints (Hard Rules)
 - ❌ No `cv2.imwrite()` or raw frame storage/transmission

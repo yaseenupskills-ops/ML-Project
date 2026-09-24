@@ -19,10 +19,12 @@ sections below are retained for history.
   `services/alert_repository.py` (`AlertRepository` interface, JSONL impl).
 - `stream_server.py`'s routes (video_feed/frame/health/metrics/recordings/
   record start-stop) ported into `api/main.py` as FastAPI endpoints, plus a
-  new `GET /recordings/{name}/video` endpoint. `stream_server.py` itself is
-  kept only for its `StreamServer`/`SyntheticFrameSource` camera-lifecycle
-  code (its own `http.server` is never started now — FastAPI is the single
-  origin) and will be deleted once parity is fully verified.
+  new `GET /recordings/{name}/video` endpoint. Its camera-lifecycle code
+  (`StreamServer._ensure_camera`/`_probe_camera`, `SyntheticFrameSource`) was
+  extracted into `services/camera_service.py` (`CameraState`) so `api/main.py`
+  no longer depends on `stream_server.py` at all; once parity was verified
+  end-to-end, `stream_server.py` was deleted (its own `http.server` was never
+  started -- FastAPI is the single origin).
 - `requirements.txt`: `streamlit` removed, `fastapi`/`uvicorn[standard]`/
   `pydantic` added.
 - Old goal below (demo-mode video source) is unaffected — `camera.source`
@@ -83,7 +85,7 @@ Verified:
 ```
 cd "/Users/yaseensmac/Documents/ML Project"
 source .venv/bin/activate
-python -m py_compile api/main.py services/*.py alert.py stream_server.py simulate_stream.py metrics.py grace_period.py camera.py
+python -m py_compile api/main.py services/*.py alert.py simulate_stream.py metrics.py grace_period.py camera.py
 PYTHONPATH=. python tests/test_system.py
 uvicorn api.main:app --host 127.0.0.1 --port 8000   # docs at /docs; see API.md
 ```
