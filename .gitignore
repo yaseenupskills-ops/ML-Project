@@ -29,6 +29,9 @@ logs/
 # Config with secrets (email credentials)
 config.yaml
 
+# Backend secrets (DB, JWT, SMTP)
+.env
+
 # OS files
 .DS_Store
 Thumbs.db
