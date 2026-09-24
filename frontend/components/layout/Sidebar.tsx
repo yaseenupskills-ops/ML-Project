@@ -1,144 +1,91 @@
-"use client";
-
+import React from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
-import { useAppStore } from '../../lib/store';
-import { 
-  Command, 
-  MessageSquare, 
-  Globe, 
-  Map, 
-  ShieldAlert, 
-  Settings 
-} from 'lucide-react';
+import { usePathname } from 'next/navigation';
+import { useStore } from '../../lib/store';
+import { UserRole } from '../../types';
+import { APP_NAME } from '../../lib/constants';
+
+interface NavItem {
+  label: string;
+  href: string;
+  roles: UserRole[] | 'all';
+}
+
+const navItems: NavItem[] = [
+  { label: 'Dashboard', href: '/app', roles: 'all' },
+  { label: 'Alerts', href: '/app/alerts', roles: ['caregiver', 'admin'] },
+  { label: 'Devices', href: '/app/devices', roles: ['admin', 'operator'] },
+  { label: 'Subjects', href: '/app/subjects', roles: ['admin'] },
+  { label: 'Analytics', href: '/app/analytics', roles: ['caregiver', 'admin', 'ml_engineer'] },
+  { label: 'Models', href: '/app/models', roles: ['admin', 'ml_engineer'] },
+  { label: 'System', href: '/app/system', roles: ['caregiver', 'admin', 'operator'] },
+  { label: 'Settings', href: '/app/settings', roles: 'all' },
+];
 
 export function Sidebar() {
   const pathname = usePathname();
-  const router = useRouter();
-  const { viewMode, setViewMode } = useAppStore();
+  const user = useStore(state => state.user);
 
-  const navItems = [
-    { id: 'command', icon: Command, label: 'Command', href: '/app' },
-    { id: 'conversations', icon: MessageSquare, label: 'Chat', href: '/app/conversations' },
-    { id: 'globe', icon: Globe, label: '3D Globe', href: '/app' },
-    { id: 'map', icon: Map, label: 'Map', href: '/app' },
-    { id: 'alerts', icon: ShieldAlert, label: 'Alerts', href: '/app/alerts' },
-  ];
+  const filteredNav = navItems.filter(item => {
+    if (item.roles === 'all') return true;
+    if (!user) return false;
+    return item.roles.includes(user.role);
+  });
 
   return (
-    <>
-      {/* Desktop Sidebar (md and larger) */}
-      <aside className="hidden md:flex w-16 lg:w-20 h-full border-r border-space-800 bg-[#010613] flex-col items-center py-6 flex-shrink-0 z-50">
-        {/* Logo */}
-        <Link href="/" className="mb-10 font-bold text-xl tracking-widest text-white hover:text-cyan-400 transition-colors">
-          O.
-        </Link>
-
-        {/* Main Nav */}
-        <nav className="flex flex-col gap-5 w-full items-center flex-1">
-          {navItems.map((item) => {
-            let isActive = pathname === item.href;
-            if (item.id === 'globe') isActive = pathname === '/app' && viewMode === '3d';
-            if (item.id === 'map') isActive = pathname === '/app' && viewMode === '2d';
-            if (item.id === 'command') isActive = pathname === '/app' && viewMode === '3d';
-            
-            const Icon = item.icon;
-            
-            const handleClick = (e: React.MouseEvent) => {
-              e.preventDefault();
-              if (item.id === 'globe') {
-                setViewMode('3d');
-                router.push('/app');
-              } else if (item.id === 'map') {
-                setViewMode('2d');
-                router.push('/app');
-              } else {
-                router.push(item.href);
-              }
-            };
-            
-            return (
-              <button 
-                key={item.id}
-                onClick={handleClick}
-                className={`relative flex items-center justify-center w-11 h-11 rounded-2xl transition-all duration-200 group cursor-pointer
-                  ${isActive ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-lg shadow-cyan-950/50' : 'text-slate-400 hover:text-white hover:bg-space-900/60'}
-                `}
-                title={item.label}
-              >
-                <Icon size={20} strokeWidth={isActive ? 2.5 : 2} />
-                
-                {/* Active Indicator */}
-                {isActive && (
-                  <div className="absolute -left-3 lg:-left-5 w-1 h-6 bg-cyan-400 rounded-r-full shadow-[0_0_8px_rgba(34,211,238,0.8)]" />
-                )}
-                
-                {/* Tooltip */}
-                <div className="absolute left-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto bg-[#040c1d] text-white text-xs px-3 py-1.5 rounded-xl whitespace-nowrap transition-opacity z-50 shadow-2xl border border-cyan-500/30 font-medium">
-                  {item.label}
-                </div>
-              </button>
-            );
-          })}
-        </nav>
-
-        {/* Settings at bottom */}
-        <Link 
-          href="/app/settings"
-          className="text-slate-400 hover:text-cyan-300 transition-colors mt-auto group relative flex items-center justify-center w-11 h-11 rounded-2xl hover:bg-space-900/60"
-          title="Settings"
-        >
-          <Settings size={20} strokeWidth={2} />
-          <div className="absolute left-16 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto bg-[#040c1d] text-white text-xs px-3 py-1.5 rounded-xl whitespace-nowrap transition-opacity z-50 shadow-2xl border border-cyan-500/30 font-medium">
-            Settings
-          </div>
-        </Link>
-      </aside>
-
-      {/* Mobile Bottom Navigation Bar (< md) */}
-      <div className="md:hidden fixed bottom-0 left-0 right-0 h-16 bg-[#040c1d]/95 backdrop-blur-xl border-t border-cyan-500/30 flex items-center justify-around z-50 px-2 shadow-2xl">
-        {navItems.map((item) => {
-          let isActive = pathname === item.href;
-          if (item.id === 'globe') isActive = pathname === '/app' && viewMode === '3d';
-          if (item.id === 'map') isActive = pathname === '/app' && viewMode === '2d';
-          if (item.id === 'command') isActive = pathname === '/app' && viewMode === '3d';
-          
-          const Icon = item.icon;
-          
-          const handleClick = (e: React.MouseEvent) => {
-            e.preventDefault();
-            if (item.id === 'globe') {
-              setViewMode('3d');
-              router.push('/app');
-            } else if (item.id === 'map') {
-              setViewMode('2d');
-              router.push('/app');
-            } else {
-              router.push(item.href);
-            }
-          };
-          
+    <aside className="w-64 flex-shrink-0 border-r border-ink-800 bg-ink-950 flex flex-col h-screen hidden md:flex">
+      <div className="h-16 flex items-center px-6 border-b border-ink-800">
+        <div className="font-bold text-xl flex items-center gap-2">
+          <span className="text-cyan-500 font-mono">F.</span>
+          <span>{APP_NAME}</span>
+        </div>
+      </div>
+      <nav className="flex-1 overflow-y-auto py-4 px-3 flex flex-col gap-1">
+        {filteredNav.map((item) => {
+          const isActive = pathname === item.href || (item.href !== '/app' && pathname.startsWith(item.href));
           return (
-            <button
-              key={item.id}
-              onClick={handleClick}
-              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition-all ${
-                isActive ? 'text-cyan-400 font-bold' : 'text-slate-400 hover:text-slate-200'
+            <Link 
+              key={item.href} 
+              href={item.href}
+              className={`px-3 py-2 rounded-xl transition-colors ${
+                isActive ? 'bg-ink-800 text-white font-medium' : 'text-gray-400 hover:text-white hover:bg-ink-900/50'
               }`}
             >
-              <Icon size={18} />
-              <span className="text-[10px] mt-0.5">{item.label}</span>
-            </button>
+              {item.label}
+            </Link>
           );
         })}
-        <Link 
-          href="/app/settings"
-          className="flex flex-col items-center justify-center py-1 px-3 rounded-xl text-slate-400 hover:text-slate-200"
-        >
-          <Settings size={18} />
-          <span className="text-[10px] mt-0.5">Settings</span>
-        </Link>
-      </div>
-    </>
+      </nav>
+    </aside>
+  );
+}
+
+export function MobileBar() {
+  const pathname = usePathname();
+  const user = useStore(state => state.user);
+
+  const filteredNav = navItems.filter(item => {
+    if (item.roles === 'all') return true;
+    if (!user) return false;
+    return item.roles.includes(user.role);
+  });
+
+  return (
+    <nav className="md:hidden flex overflow-x-auto border-t border-ink-800 bg-ink-950 p-2 gap-2 fixed bottom-0 w-full z-50">
+      {filteredNav.map((item) => {
+        const isActive = pathname === item.href || (item.href !== '/app' && pathname.startsWith(item.href));
+        return (
+          <Link 
+            key={item.href} 
+            href={item.href}
+            className={`px-4 py-2 rounded-xl whitespace-nowrap text-sm ${
+              isActive ? 'bg-ink-800 text-white font-medium' : 'text-gray-400'
+            }`}
+          >
+            {item.label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }

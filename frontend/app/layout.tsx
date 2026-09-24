@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
+import Providers from "./providers";
+import { APP_NAME } from "../lib/constants";
 
 const inter = Inter({ 
   subsets: ["latin"],
@@ -15,8 +17,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "RAIN-AI | Regime-Aware Monsoon Rainfall Intelligence",
-  description: "AI Post-Processing of Numerical Weather Prediction (NWP) Monsoon Rainfall Forecasts for MoES / NCMRWF — SIH Problem Statement 26080.",
+  title: `${APP_NAME} | Privacy-first fall detection`,
+  description: "Fall detection Caregiver Dashboard",
 };
 
 export default function RootLayout({
@@ -26,8 +28,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} dark`}>
-      <body className="bg-space-950 text-white antialiased font-sans w-full h-full overflow-x-hidden">
-        {children}
+      <body className="bg-ink-950 text-white antialiased font-sans w-full h-full overflow-x-hidden">
+        <Providers>
+          {children}
+        </Providers>
       </body>
     </html>
   );
