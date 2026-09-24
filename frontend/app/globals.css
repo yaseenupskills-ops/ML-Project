@@ -1,20 +1,52 @@
 @import "tailwindcss";
 
 @theme {
-  --color-ink-950: #010613;
-  --color-ink-900: #020612;
-  --color-ink-800: #040c1d;
-  --color-ink-700: #050c1e;
-  
-  --color-cyan-500: #06B6D4; 
-  --color-teal-500: #14B8A6; 
-  
+  --color-ink-950: #0f172a;
+  --color-ink-900: #1e293b;
+  --color-ink-800: #334155;
+  --color-ink-700: #475569;
+
+  --color-cyan-500: #06B6D4;
+  --color-teal-500: #14B8A6;
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
   --font-sans: var(--font-inter), sans-serif;
   --font-mono: var(--font-jetbrains-mono), monospace;
 }
 
 :root {
   color-scheme: dark;
+
+  --background: #0f172a;
+  --foreground: #FFFFFF;
+  --primary: #FFFFFF;
+  --primary-foreground: #0f172a;
+  --secondary: #1e293b;
+  --secondary-foreground: #FFFFFF;
+  --destructive: #e11d48;
+  --destructive-foreground: #FFFFFF;
+  --accent: #1e293b;
+  --accent-foreground: #FFFFFF;
+  --muted: #1e293b;
+  --muted-foreground: #cbd5e1;
+  --border: #334155;
+  --input: #1e293b;
+  --ring: var(--color-cyan-500);
 }
 
 html, body {
@@ -22,7 +54,7 @@ html, body {
   height: 100%;
   margin: 0;
   padding: 0;
-  background-color: var(--color-ink-950);
+  background-color: #0f172a;
   color: #FFFFFF;
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
