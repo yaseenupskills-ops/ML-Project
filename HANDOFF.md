@@ -1,9 +1,33 @@
 # Progress Handoff — Fall Detection Project
 
-Last updated: 2026-09-23 (Demo-mode video source session)
+Last updated: 2026-09-24 (Streamlit removal, FastAPI backend session)
 
 ## Goal (as of now)
-Dashboard phases 1–4 done + verified. NEW: demo-mode video source (`camera.source`) added for live presentation.
+Streamlit dashboard removed entirely. Its non-UI logic moved to `services/`
+(alerts, recordings, analytics, roles) and the backend is now exposed as a
+FastAPI service (`api/main.py`, `uvicorn api.main:app --port 8000`). A
+Next.js frontend is being built separately against `API.md`. See
+`API.md`/`AGENTS.md` for the current structure and run commands; the
+sections below are retained for history.
+
+### This session: dashboard → FastAPI (branch `backend-api`)
+- `dashboard/app.py` and `.streamlit/` deleted. Non-UI functions (alert
+  loading/remap, filtering, ack/dismiss/escalate, auto-escalate,
+  recording↔alert mapping, analytics math, CSV export, role filtering) ported
+  to `services/alerts_service.py`, `services/recordings_service.py`,
+  `services/analytics_service.py`, `services/roles.py`, behind a new
+  `services/alert_repository.py` (`AlertRepository` interface, JSONL impl).
+- `stream_server.py`'s routes (video_feed/frame/health/metrics/recordings/
+  record start-stop) ported into `api/main.py` as FastAPI endpoints, plus a
+  new `GET /recordings/{name}/video` endpoint. `stream_server.py` itself is
+  kept only for its `StreamServer`/`SyntheticFrameSource` camera-lifecycle
+  code (its own `http.server` is never started now — FastAPI is the single
+  origin) and will be deleted once parity is fully verified.
+- `requirements.txt`: `streamlit` removed, `fastapi`/`uvicorn[standard]`/
+  `pydantic` added.
+- Old goal below (demo-mode video source) is unaffected — `camera.source`
+  config plumbing carried over into `api/main.py`'s `_stream_server_config()`
+  unchanged.
 
 ## Current status
 ### Demo-mode video source (NEW this session): DONE & verified
@@ -59,10 +83,9 @@ Verified:
 ```
 cd "/Users/yaseensmac/Documents/ML Project"
 source .venv/bin/activate
-python -m py_compile dashboard/app.py alert.py stream_server.py simulate_stream.py metrics.py grace_period.py camera.py
+python -m py_compile api/main.py services/*.py alert.py stream_server.py simulate_stream.py metrics.py grace_period.py camera.py
 PYTHONPATH=. python tests/test_system.py
-python -m pyflakes dashboard/app.py stream_server.py   # benign: 2 unused imports + 1 dead local
-streamlit run dashboard/app.py          # Analytics page to review sprint 1 additions
+uvicorn api.main:app --host 127.0.0.1 --port 8000   # docs at /docs; see API.md
 ```
 
 ## Known issues / caveats
@@ -89,7 +112,7 @@ streamlit run dashboard/app.py          # Analytics page to review sprint 1 addi
 1. Optional: sprint 3 analytics or fix the 5 stale unit tests on request.
 2. Decide reporting-boundary if PDF reports are ever desired.
 3. Remove synthetic test recording when done with manual Phase 3 verification.
-4. Demo presentation: flip `camera.source` to `data/demo/demo_fall.mp4`, run dashboard, restore to `0` after (backup config at `/tmp/config.yaml.bak`).
+4. Demo presentation: flip `camera.source` to `data/demo/demo_fall.mp4`, run `uvicorn api.main:app --host 127.0.0.1 --port 8000`, restore to `0` after (backup config at `/tmp/config.yaml.bak`).
 5. Alert-log field-mapping BUG FOUND & FIXED: `load_alert_history()` renamed `fall_event_*`/`grace_period_*` JSONL keys → `subject_id`/`confidence`/`tier`/`outcome`/`response_time`; previously those columns never existed in the JSONL, so every alert displayed as `unknown / LOW / 0%`. Fixed in `dashboard/app.py:276` and verified (archived 157 alerts + live demo alert now render real values). `archive_alerts.sh` added (archives + clears alert log for clean demo).
 
 ---

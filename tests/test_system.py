@@ -68,14 +68,6 @@ def test_imports():
         print(f"✗ evaluate import failed: {e}")
         return False
     
-    # Dashboard requires streamlit which might not be in basic test env
-    try:
-        import dashboard.app
-        print("✓ dashboard.app imported")
-    except Exception as e:
-        print(f"⚠ dashboard.app import failed (might be missing streamlit): {e}")
-        # This is OK for basic testing
-    
     try:
         import model_cnn_lstm
         print("✓ model_cnn_lstm imported (stretch goal)")
