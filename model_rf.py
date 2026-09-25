@@ -12,20 +12,23 @@ from sklearn.model_selection import GroupKFold
 from sklearn.metrics import classification_report, confusion_matrix, f1_score, precision_score, recall_score
 from sklearn.preprocessing import StandardScaler
 import joblib
-import yaml
 import logging
+
+from project_config import load_config
 from typing import Tuple, Dict, Any, Optional
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+MODEL_SCHEMA_VERSION = 1
+
 
 class FallDetectionRF:
     """Random Forest classifier for fall detection with subject-independent evaluation."""
     
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize with configuration."""
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         # Model parameters
         self.model = RandomForestClassifier(
@@ -41,6 +44,7 @@ class FallDetectionRF:
         self.scaler = StandardScaler()
         self.is_fitted = False
         self.feature_names = None
+        self.artifact_metadata: Dict[str, Any] = {}
         
         logger.info("FallDetectionRF initialized")
     
@@ -69,28 +73,44 @@ class FallDetectionRF:
         if label_col is None:
             raise ValueError(f"No label column found. Available: {list(df.columns)}")
         
-        # Feature columns are everything except metadata and label
-        feature_cols = [col for col in df.columns 
-                       if col not in meta_cols + [label_col]]
-        
-        if len(feature_cols) == 0:
+        # Feature columns are everything except metadata and label. Once a
+        # model has been loaded, preserve its training order and reject schema
+        # drift instead of silently feeding columns in a different order.
+        candidate_cols = [col for col in df.columns
+                          if col not in meta_cols + [label_col]]
+        if len(candidate_cols) == 0:
             raise ValueError("No feature columns found")
-        
-        self.feature_names = feature_cols
-        
+
+        if self.feature_names is not None:
+            expected = list(self.feature_names)
+            missing = [name for name in expected if name not in candidate_cols]
+            extra = [name for name in candidate_cols if name not in expected]
+            if missing or extra:
+                raise ValueError(
+                    "Feature schema does not match the trained model; "
+                    f"missing={missing}, unexpected={extra}"
+                )
+            feature_cols = expected
+        else:
+            feature_cols = candidate_cols
+            self.feature_names = feature_cols
+
         X = df[feature_cols].values
         y = df[label_col].values
+        if not set(pd.unique(y)).issubset({0, 1, 0.0, 1.0}):
+            raise ValueError("Labels must be binary values encoded as 0/1")
+        y = y.astype(int)
         groups = df['subject_id'].values
-        
+
         # Handle missing values
         if np.any(np.isnan(X)):
             logger.warning("Found NaN values in features - filling with 0")
             X = np.nan_to_num(X, nan=0.0)
-        
+
         logger.info(f"Prepared {X.shape[0]} samples with {X.shape[1]} features")
         logger.info(f"Label distribution: {np.bincount(y.astype(int))}")
         logger.info(f"Unique subjects: {np.unique(groups)}")
-        
+
         return X, y, groups
     
     def train(self, X: np.ndarray, y: np.ndarray, groups: np.ndarray) -> Dict[str, float]:
@@ -107,14 +127,22 @@ class FallDetectionRF:
         """
         logger.info("Starting subject-independent cross-validation training")
         
-        # Use GroupKFold to prevent data leakage
-        group_kfold = GroupKFold(n_splits=5)
+        # Use GroupKFold to prevent leakage, but fail clearly when the data
+        # does not contain enough independent subjects.
+        n_subjects = len(np.unique(groups))
+        if n_subjects < 2:
+            raise ValueError(
+                "Subject-independent training requires at least two subject IDs; "
+                f"received {n_subjects}."
+            )
+        n_splits = min(5, n_subjects)
+        group_kfold = GroupKFold(n_splits=n_splits)
         
         cv_scores = []
         cv_reports = []
         
         for fold, (train_idx, test_idx) in enumerate(group_kfold.split(X, y, groups)):
-            logger.info(f"Processing fold {fold+1}/5")
+            logger.info(f"Processing fold {fold+1}/{n_splits}")
             
             X_train, X_test = X[train_idx], X[test_idx]
             y_train, y_test = y[train_idx], y[test_idx]
@@ -130,7 +158,7 @@ class FallDetectionRF:
             y_pred = self.model.predict(X_test_scaled)
             
             # Compute metrics
-            f1 = f1_score(y_test, y_pred, average='binary')
+            f1 = f1_score(y_test, y_pred, average='binary', zero_division=0)
             precision = precision_score(y_test, y_pred, average='binary', zero_division=0)
             recall = recall_score(y_test, y_pred, average='binary', zero_division=0)
             
@@ -176,38 +204,35 @@ class FallDetectionRF:
         
         return cv_results
     
+    def _transform_for_predict(self, X: np.ndarray) -> np.ndarray:
+        """Validate and scale a raw feature matrix exactly once."""
+        if not self.is_fitted:
+            raise RuntimeError("Model must be trained or loaded before prediction")
+        X = np.asarray(X, dtype=float)
+        if X.ndim != 2:
+            raise ValueError(f"Expected a 2D feature matrix, got shape {X.shape}")
+        if self.feature_names is not None and X.shape[1] != len(self.feature_names):
+            raise ValueError(
+                f"Expected {len(self.feature_names)} features, got {X.shape[1]}"
+            )
+        if np.any(~np.isfinite(X)):
+            X = np.nan_to_num(X, nan=0.0, posinf=0.0, neginf=0.0)
+        return self.scaler.transform(X)
+
     def predict(self, X: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+        """Predict labels and probabilities from **raw** features.
+
+        Callers should not scale ``X`` before calling this method; the fitted
+        scaler is applied internally exactly once.
         """
-        Predict labels and probabilities.
-        
-        Args:
-            X: Feature matrix
-            
-        Returns:
-            Tuple of (predictions, probabilities)
-        """
-        if not self.is_fitted:
-            raise RuntimeError("Model must be trained before prediction")
-        
-        # Handle missing values
-        if np.any(np.isnan(X)):
-            X = np.nan_to_num(X, nan=0.0)
-        
-        X_scaled = self.scaler.transform(X)
+        X_scaled = self._transform_for_predict(X)
         predictions = self.model.predict(X_scaled)
-        probabilities = self.model.predict_proba(X_scaled)[:, 1]  # Probability of class 1 (fall)
-        
+        probabilities = self.model.predict_proba(X_scaled)[:, 1]
         return predictions, probabilities
-    
+
     def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        """Predict class probabilities."""
-        if not self.is_fitted:
-            raise RuntimeError("Model must be trained before prediction")
-        
-        if np.any(np.isnan(X)):
-            X = np.nan_to_num(X, nan=0.0)
-        
-        X_scaled = self.scaler.transform(X)
+        """Predict class probabilities from raw features."""
+        X_scaled = self._transform_for_predict(X)
         return self.model.predict_proba(X_scaled)
     
     def get_feature_importance(self) -> Optional[np.ndarray]:
@@ -218,30 +243,54 @@ class FallDetectionRF:
     
     def save_model(self, filepath: Path):
         """Save trained model and scaler."""
+        filepath = Path(filepath)
         if not self.is_fitted:
-            logger.warning("Saving unfitted model")
+            raise RuntimeError("Cannot save an unfitted model")
         
         filepath.parent.mkdir(parents=True, exist_ok=True)
         model_data = {
             'model': self.model,
             'scaler': self.scaler,
             'feature_names': self.feature_names,
-            'is_fitted': self.is_fitted
+            'is_fitted': self.is_fitted,
+            'feature_schema_version': MODEL_SCHEMA_VERSION,
+            'feature_config': {
+                'window_sec': self.config.get('features', {}).get('window_sec'),
+                'fps': self.config.get('features', {}).get('fps'),
+                'frame_stride': self.config.get('pose', {}).get('frame_stride', 1),
+            },
         }
         joblib.dump(model_data, filepath)
         logger.info(f"Model saved to {filepath}")
     
     def load_model(self, filepath: Path):
         """Load trained model and scaler."""
+        filepath = Path(filepath)
         if not filepath.exists():
             raise FileNotFoundError(f"Model file not found: {filepath}")
         
         model_data = joblib.load(filepath)
+        if not isinstance(model_data, dict) or 'model' not in model_data or 'scaler' not in model_data:
+            raise ValueError(f"Unsupported model artifact format: {filepath}")
         self.model = model_data['model']
         self.scaler = model_data['scaler']
-        self.feature_names = model_data.get('feature_names', None)
-        self.is_fitted = model_data.get('is_fitted', True)
-        
+        self.feature_names = model_data.get('feature_names')
+        self.artifact_metadata = {
+            'feature_schema_version': model_data.get('feature_schema_version', 0),
+            'feature_config': model_data.get('feature_config', {}),
+        }
+        fitted_value = model_data.get('is_fitted', True)
+        self.is_fitted = True if fitted_value is None else bool(fitted_value)
+        schema_version = model_data.get('feature_schema_version', 0)
+        if schema_version != MODEL_SCHEMA_VERSION:
+            logger.warning(
+                "Model artifact uses feature schema version %s; runtime expects %s",
+                schema_version, MODEL_SCHEMA_VERSION,
+            )
+        if self.feature_names is not None and hasattr(self.scaler, 'n_features_in_'):
+            if len(self.feature_names) != int(self.scaler.n_features_in_):
+                raise ValueError("Model feature names do not match scaler dimensions")
+
         logger.info(f"Model loaded from {filepath}")
 
 def train_rf_model(features_csv: str, 
@@ -304,7 +353,7 @@ def evaluate_rf_model(features_csv: str,
         'accuracy': np.mean(y_pred == y),
         'precision': precision_score(y, y_pred, average='binary', zero_division=0),
         'recall': recall_score(y, y_pred, average='binary', zero_division=0),
-        'f1': f1_score(y, y_pred, average='binary'),
+        'f1': f1_score(y, y_pred, average='binary', zero_division=0),
         'roc_auc': None  # Would need probabilities for full ROC
     }
     

@@ -5,7 +5,10 @@ Implements a 1D-CNN + LSTM architecture for temporal fall detection.
 This is a stretch goal - the Random Forest baseline is the primary deliverable.
 """
 
+from __future__ import annotations
+
 import numpy as np
+import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -404,7 +407,9 @@ class FallDetectionCNNLSTM:
         if not filepath.exists():
             raise FileNotFoundError(f"Model file not found: {filepath}")
         
-        model_data = torch.load(filepath, map_location=self.device)
+        model_data = torch.load(
+            filepath, map_location=self.device, weights_only=True
+        )
         
         # Rebuild model
         self.seq_len = model_data['seq_len']

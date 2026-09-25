@@ -1,5 +1,10 @@
 # Fall Detection System - Project Summary
 
+> **Status note:** The core pipeline is functional, but the saved evaluation
+> artifact is provisional and must be regenerated with verified actor-level
+> subject splits. The dashboard now includes a caregiver overview and local live
+> monitoring; see `README.md` for current setup limitations.
+
 ## Project Status: COMPLETE (Core System Functional)
 
 ## ✅ Completed Components
@@ -38,7 +43,7 @@
 ### 5. Dashboard (Streamlit)
 - Alert history table (timestamp, subject, clip, confidence, tier, outcome)
 - System status panel (camera status, model status, uptime)
-- Privacy-first design: no live video, no activity monitoring
+- Privacy-first design: local live preview and no activity reporting beyond alert workflow
 
 ## ⚠️ Known Limitations
 
@@ -91,15 +96,15 @@ grace_period:
 | False Positive Rate | 62.5% | 25/40 ADL sequences |
 | Cross-val F1 (fall) | 0.647 ± 0.204 | Clip-level CV |
 | Inference Latency | ~20ms/frame | On M4 MacBook Air |
-| Privacy | ✅ Local only | No video leaves device |
+| Privacy | ✅ Local by default | Raw frames are not stored or transmitted by default; recording is opt-in/local |
 
 ## 📝 Known Issues & Future Work
 
 1. **High False Positive Rate**: Fundamental limitation of threshold-based approach with current model
 2. **Model Calibration**: Probabilities not well-calibrated (falls: 0.2-0.7, ADLs: 0.2-0.38)
 3. **Missing Le2i Dataset**: Archive contained URFD duplicate
-4. **No Real-time Video Pipeline**: Simulated with pre-extracted keypoints
-5. **No Live Camera Integration**: Requires OpenCV VideoCapture integration
+4. **Real-time camera integration**: Available through the local stream server and live detector; hardware permissions and camera failure handling still require deployment testing
+5. **Dataset provenance**: Existing processed artifacts need actor-level metadata before subject-independent claims are valid
 
 ### Recommended Improvements
 1. **Better Features**: Temporal derivatives, optical flow, skeletal kinematics
@@ -139,11 +144,11 @@ fall-detection/
 
 The fall detection system is **functionally complete** with all core components implemented and tested:
 - ✅ End-to-end pipeline: Video → Keypoints → Features → Classification → Decision → Grace Period → Alert
-- ✅ Privacy-preserving: No video storage/transmission, local processing only
-- ✅ Grace period: 20-second user confirmation prevents false alarms
-- ✅ Alert system: Email notifications with structured payload
-- ✅ Dashboard: Alert history and system monitoring
+- ✅ Privacy-preserving: raw-frame storage/transmission disabled by default; local processing with opt-in local recording
+- ✅ Grace period: Configurable confirmation window with dashboard cancellation
+- ✅ Alert system: Email notifications with structured payload and delivery state
+- ✅ Dashboard: caregiver overview, alert workflow, live monitoring, and system status
 
 **Trade-off Accepted**: 86.7% fall detection with 62.5% false positive rate. The grace period (20s user confirmation) mitigates false alarms in practice. For production deployment, the CNN-LSTM model (Phase 4) or additional training data would be needed to improve specificity.
 
-**Status**: Ready for configuration and deployment testing.
+**Status**: Suitable for local configuration and demo testing; regenerate actor-held-out evaluation artifacts before making performance claims.

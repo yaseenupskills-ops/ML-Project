@@ -16,6 +16,7 @@ dashboard process. Binding defaults to 127.0.0.1 to keep video on-device
 
 import json
 import logging
+import secrets
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -52,6 +53,7 @@ class SyntheticFrameSource:
         self._fps_actual = 0.0
         self._frame_count = 0
         self.start_time = time.time()
+        self.supports_recording = False
 
     def _loop(self):
         interval = 1.0 / self.fps
@@ -98,8 +100,28 @@ class SyntheticFrameSource:
     def get_fps(self) -> float:
         return self._fps_actual
 
+    def generate_mjpeg_stream(self, quality: int = 80, max_fps: float = 15.0):
+        # Reuse the common camera encoder/stream pacing implementation.
+        yield from camera_module.CameraManager.generate_mjpeg_stream(
+            self, quality=quality, max_fps=max_fps
+        )
+
     def stop(self):
         self.running = False
+        if self._thread is not None:
+            self._thread.join(timeout=1.0)
+        self._thread = None
+
+    def get_latest_frame_with_timestamp(self):
+        frame = self.read_frame()
+        return (time.time(), frame) if frame is not None else None
+
+    def start_recording(self, *args, **kwargs):
+        return False
+
+    @staticmethod
+    def list_recordings(output_dir):
+        return camera_module.CameraManager.list_recordings(output_dir)
 
 
 class StreamServer:
@@ -107,7 +129,13 @@ class StreamServer:
 
     def __init__(self, config: dict = None):
         self.config = config or {}
-        self.host = self.config.get("host", "127.0.0.1")
+        requested_host = str(self.config.get("host", "127.0.0.1"))
+        if requested_host not in {"127.0.0.1", "localhost", "::1"}:
+            logger.warning(
+                "Forcing stream server to localhost; remote binding requires a secured proxy"
+            )
+            requested_host = "127.0.0.1"
+        self.host = requested_host
         self.port = int(self.config.get("port", 8091))
         self.jpeg_quality = int(self.config.get("jpeg_quality", 80))
         self.max_fps = float(self.config.get("max_fps", 15))
@@ -115,12 +143,29 @@ class StreamServer:
         self._http_thread: Optional[threading.Thread] = None
         self._camera = None
         self._camera_owner = False
-        self._rec_path = Path(self.config.get("record_path", "data/recordings"))
+        rec_path = Path(self.config.get("record_path", "data/recordings"))
+        if not rec_path.is_absolute():
+            rec_path = Path(__file__).resolve().parent / rec_path
+        self._rec_path = rec_path
         self._max_days = int(self.config.get("recording_max_days", 7))
         self._segment_duration = float(
             self.config.get("recording_segment_duration", 300)
         )
         self._recording_started = False
+        self.recording_enabled = bool(self.config.get("recording_enabled", False))
+        # This token is generated per process and is required by local HTTP
+        # clients. It is not placed in a public URL or exposed in metrics.
+        self.auth_token = secrets.token_urlsafe(32)
+        origins = self.config.get(
+            "allowed_origins",
+            [
+                "http://localhost:8501",
+                "http://127.0.0.1:8501",
+                "http://localhost:3000",
+                "http://127.0.0.1:3000",
+            ],
+        )
+        self.allowed_origins = {str(origin).rstrip("/") for origin in origins}
 
     # ─── Camera source ─────────────────────────────────────────────────────
 
@@ -157,7 +202,7 @@ class StreamServer:
             except Exception:
                 pass
             self._recording_started = False
-        if self._camera_owner and self._camera is not None:
+        if self._camera is not None:
             try:
                 self._camera.stop()
             except Exception:
@@ -194,12 +239,19 @@ class StreamServer:
         if opened is not None:
             self._camera = opened
             self._camera_owner = True
+            source_type = (
+                "video_file" if isinstance(opened, camera_module.VideoFileCamera)
+                else "rtsp" if isinstance(opened, camera_module.CameraManagerRTSP)
+                else "real_camera"
+            )
+            metrics.update(source_type=source_type)
             logger.info(f"Live camera source: {src}")
             return
         logger.info("Using synthetic live-preview source (no camera available)")
         self._camera = SyntheticFrameSource(width, height, min(fps, self.max_fps))
         self._camera.start()
         self._camera_owner = False
+        metrics.update(source_type="synthetic_preview")
 
     @staticmethod
     def _probe_camera(src, width, height, fps, loop: bool = True, real_time: bool = True,
@@ -232,6 +284,47 @@ class StreamServer:
             return None
         return result["cam"]
 
+    def _origin_allowed(self, handler: BaseHTTPRequestHandler) -> bool:
+        origin = handler.headers.get("Origin")
+        return not origin or origin.rstrip("/") in self.allowed_origins
+
+    def _is_authorized(self, handler: BaseHTTPRequestHandler) -> bool:
+        if not self._origin_allowed(handler):
+            return False
+        supplied = handler.headers.get("X-FallGuard-Token")
+        if not supplied:
+            from urllib.parse import parse_qs, urlsplit
+            supplied = (parse_qs(urlsplit(handler.path).query).get("token") or [None])[0]
+        return bool(supplied) and secrets.compare_digest(
+            str(supplied), self.auth_token
+        )
+
+    def _require_auth(self, handler: BaseHTTPRequestHandler) -> bool:
+        if self._is_authorized(handler):
+            self._send_cors_headers(handler)
+            return True
+        self._respond_json(handler, 403, {"ok": False, "error": "unauthorized"})
+        return False
+
+    def _send_cors_headers(self, handler: BaseHTTPRequestHandler) -> None:
+        origin = handler.headers.get("Origin")
+        if origin and origin.rstrip("/") in self.allowed_origins:
+            handler.send_header("Access-Control-Allow-Origin", origin)
+            handler.send_header("Vary", "Origin")
+            handler.send_header("Access-Control-Allow-Headers", "Content-Type, X-FallGuard-Token")
+            handler.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+
+    def _source_allowed(self, source) -> bool:
+        camera_cfg = self.config.get("camera", {}) or {}
+        allowed = {
+            str(camera_cfg.get("source")),
+            str(camera_cfg.get("webcam_source", 0)),
+            str(camera_cfg.get("demo_source")),
+            "0",
+            "synthetic",
+        }
+        return str(source) in allowed
+
     # ─── Lifecycle ──────────────────────────────────────────────────────────
 
     def start(self) -> bool:
@@ -243,21 +336,30 @@ class StreamServer:
             def log_message(self, *a):  # silence noisy logging
                 return
 
+            def do_OPTIONS(self):
+                server._send_cors_headers(self)
+                self.send_response(204)
+                self.end_headers()
+
             def do_GET(self):
-                if self.path.split("?", 1)[0].startswith("/video_feed"):
+                if not server._require_auth(self):
+                    return
+                path = self.path.split("?", 1)[0]
+                if path.startswith("/video_feed"):
                     server._handle_video_feed(self)
-                elif self.path.split("?", 1)[0] == "/frame":
+                elif path == "/frame":
                     server._handle_frame(self)
-                elif self.path.split("?", 1)[0] == "/metrics":
+                elif path == "/metrics":
                     server._handle_metrics(self)
-                elif self.path.split("?", 1)[0] == "/health":
+                elif path == "/health":
                     server._handle_health(self)
-                elif self.path.split("?", 1)[0] == "/recordings":
+                elif path == "/recordings":
                     server._handle_recordings(self)
-                elif self.path.split("?", 1)[0].startswith("/recordings/"):
-                    parts = self.path.split("?", 1)[0].split("/")
+                elif path.startswith("/recordings/"):
+                    parts = path.split("/")
                     if len(parts) == 4 and parts[3] == "info":
-                        server._handle_recording_info(self, parts[2])
+                        from urllib.parse import unquote
+                        server._handle_recording_info(self, unquote(parts[2]))
                     else:
                         self.send_response(404)
                         self.end_headers()
@@ -268,11 +370,14 @@ class StreamServer:
                     self.wfile.write(b"Not found")
 
             def do_POST(self):
-                if self.path.split("?", 1)[0] == "/record/start":
+                if not server._require_auth(self):
+                    return
+                path = self.path.split("?", 1)[0]
+                if path == "/record/start":
                     server._handle_record_start(self)
-                elif self.path.split("?", 1)[0] == "/record/stop":
+                elif path == "/record/stop":
                     server._handle_record_stop(self)
-                elif self.path.split("?", 1)[0] == "/source":
+                elif path == "/source":
                     server._handle_source_switch(self)
                 else:
                     self.send_response(404)
@@ -300,17 +405,21 @@ class StreamServer:
             self._httpd.shutdown()
             self._httpd.server_close()
             self._httpd = None
+        if self._http_thread is not None:
+            self._http_thread.join(timeout=2.0)
+            self._http_thread = None
         if self._recording_started and self._camera is not None:
             try:
                 self._camera.stop_recording()
             except Exception:
                 pass
-        if self._camera_owner and self._camera is not None:
+        if self._camera is not None:
             try:
                 self._camera.stop()
             except Exception:
                 pass
-            self._camera = None
+        self._camera = None
+        self._camera_owner = False
 
     # ─── Handlers ───────────────────────────────────────────────────────────
 
@@ -321,7 +430,6 @@ class StreamServer:
             "Content-Type", f"multipart/x-mixed-replace; boundary={BOUNDARY}"
         )
         handler.send_header("Cache-Control", "no-cache")
-        handler.send_header("Access-Control-Allow-Origin", "*")
         handler.end_headers()
         try:
             for chunk in self._camera.generate_mjpeg_stream(
@@ -353,7 +461,6 @@ class StreamServer:
         handler.send_header("Content-Type", "image/jpeg")
         handler.send_header("Cache-Control", "no-store, no-cache, must-revalidate")
         handler.send_header("Pragma", "no-cache")
-        handler.send_header("Access-Control-Allow-Origin", "*")
         handler.send_header("Content-Length", str(len(data)))
         handler.end_headers()
         try:
@@ -371,11 +478,11 @@ class StreamServer:
             fps=round(fps, 2),
             recording_active=self._recording_started,
             source=self.config.get("camera", {}).get("source", None),
+            source_type=metrics.get().get("source_type", "unknown"),
         )
         payload = json.dumps(metrics.format_summary()).encode()
         handler.send_response(200)
         handler.send_header("Content-Type", "application/json")
-        handler.send_header("Access-Control-Allow-Origin", "*")
         handler.send_header("Content-Length", str(len(payload)))
         handler.end_headers()
         handler.wfile.write(payload)
@@ -390,15 +497,20 @@ class StreamServer:
         ).encode()
         handler.send_response(200)
         handler.send_header("Content-Type", "application/json")
-        handler.send_header("Access-Control-Allow-Origin", "*")
         handler.end_headers()
         handler.wfile.write(payload)
 
     def _handle_record_start(self, handler: BaseHTTPRequestHandler):
+        if not self.recording_enabled:
+            self._respond_json(handler, 403, {"ok": False, "error": "recording disabled"})
+            return
         self._ensure_camera()
         cam = self._camera
         if cam is None:
             self._respond_json(handler, 500, {"ok": False, "error": "no source"})
+            return
+        if not getattr(cam, "supports_recording", True):
+            self._respond_json(handler, 409, {"ok": False, "error": "source does not support recording"})
             return
         try:
             ok = cam.start_recording(
@@ -422,6 +534,9 @@ class StreamServer:
         source = None
         try:
             length = int(handler.headers.get("Content-Length") or 0)
+            if length > 64 * 1024:
+                self._respond_json(handler, 413, {"ok": False, "error": "request too large"})
+                return
             if length > 0:
                 raw = handler.rfile.read(length).decode("utf-8")
                 try:
@@ -439,6 +554,9 @@ class StreamServer:
             return
         if isinstance(source, str) and source.isdigit():
             source = int(source)
+        if not self._source_allowed(source):
+            self._respond_json(handler, 400, {"ok": False, "error": "source is not allowed"})
+            return
         self.switch_source(source)
         self._respond_json(
             handler, 200,
@@ -457,23 +575,32 @@ class StreamServer:
         self._respond_json(handler, 200, {"ok": True, "recording": False})
 
     def _handle_recordings(self, handler: BaseHTTPRequestHandler):
-        self._ensure_camera()
         try:
-            recs = self._camera.list_recordings(self._rec_path)
-            self._respond_json(handler, 200, {"recordings": recs})
+            lister = getattr(self._camera, "list_recordings", None)
+            recs = lister(self._rec_path) if lister else camera_module.CameraManager.list_recordings(self._rec_path)
+            # Do not disclose absolute local paths to a browser/API client.
+            safe = [
+                {
+                    "name": item.get("name"),
+                    "size_mb": item.get("size_mb", 0),
+                    "created": item.get("created"),
+                }
+                for item in recs
+            ]
+            self._respond_json(handler, 200, {"recordings": safe})
         except Exception as e:
             self._respond_json(handler, 500, {"ok": False, "error": str(e)})
 
     @staticmethod
     def _parse_segment_start(name: str) -> Optional[float]:
-        """Parse segment start time (unix) from `rec_YYYYMMDD_HHMMSS.mp4`."""
+        """Parse the timestamp prefix from a recording segment filename."""
         import datetime as dt
+        import re
         try:
-            stem = name.split(".mp4", 1)[0]
-            if not stem.startswith("rec_"):
+            match = re.match(r"^rec_(\d{8}_\d{6})", name)
+            if not match:
                 return None
-            ts = dt.datetime.strptime(stem[4:], "%Y%m%d_%H%M%S")
-            return ts.timestamp()
+            return dt.datetime.strptime(match.group(1), "%Y%m%d_%H%M%S").timestamp()
         except Exception:
             return None
 
@@ -519,11 +646,35 @@ _singleton_lock = threading.Lock()
 
 
 def get_stream_server(config: dict = None) -> StreamServer:
-    """Return the process-wide stream server, creating it if needed."""
+    """Return the process-wide stream server, creating/configuring it if needed."""
     global _server_singleton
     with _singleton_lock:
         if _server_singleton is None:
             _server_singleton = StreamServer(config or {})
+        elif config and _server_singleton._httpd is None:
+            # Dashboard health checks may create the singleton before the
+            # server is started. Apply the real config before binding.
+            _server_singleton.config.update(config)
+            _server_singleton.recording_enabled = bool(
+                config.get("recording_enabled", _server_singleton.recording_enabled)
+            )
+            _server_singleton.port = int(config.get("port", _server_singleton.port))
+            _server_singleton.jpeg_quality = int(
+                config.get("jpeg_quality", _server_singleton.jpeg_quality)
+            )
+            _server_singleton.max_fps = float(
+                config.get("max_fps", _server_singleton.max_fps)
+            )
+            if config.get("record_path"):
+                record_path = Path(config["record_path"])
+                if not record_path.is_absolute():
+                    record_path = Path(__file__).resolve().parent / record_path
+                _server_singleton._rec_path = record_path
+            origins = config.get("allowed_origins")
+            if origins:
+                _server_singleton.allowed_origins = {
+                    str(origin).rstrip("/") for origin in origins
+                }
         return _server_singleton
 
 

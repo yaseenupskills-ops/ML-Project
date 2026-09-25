@@ -1,5 +1,10 @@
 # Progress Handoff — Fall Detection Project
 
+> **Current implementation note:** The dashboard now has stable alert IDs,
+> live grace-period cancellation, local authenticated stream endpoints, and a
+> caregiver Overview page. The saved evaluation artifact remains provisional
+> until actor-level data provenance and held-out subject splits are regenerated.
+
 Last updated: 2026-09-23 (Demo-mode video source session)
 
 ## Goal (as of now)

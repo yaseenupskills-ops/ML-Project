@@ -8,9 +8,9 @@ plus the status columns managed by `AlertManager.acknowledge_alert`. Run after
 """
 
 import json
-import math
 import random
 import time
+import uuid
 from pathlib import Path
 
 OUT = Path("logs/alerts.jsonl")
@@ -23,7 +23,7 @@ CONF_TIERS = [
 ]
 OUTCOMES = [
     ("timeout", None), ("timeout", None), ("timeout", None),
-    ("acknowledged", 8.4), ("acknowledged", 14.7), ("cancelled", 5.2),
+    ("timeout", 8.4), ("timeout", 14.7), ("cancelled", 5.2),
 ]
 
 
@@ -38,6 +38,7 @@ def gen_row(ts: float, n: int) -> dict:
     acked_by = {"acknowledged": "admin", "dismissed": "caregiver"}.get(status)
     acked_at = ts + resp if (acked_by and resp) else ts + 30 if acked_by else None
     return {
+        "id": uuid.uuid4().hex,
         "timestamp": round(ts, 4),
         "fall_event_timestamp": round(ts - random.uniform(0.5, 3.0), 4),
         "fall_event_subject": subject,
@@ -48,6 +49,7 @@ def gen_row(ts: float, n: int) -> dict:
         "grace_period_response_time": resp,
         "alert_type": "email",
         "alert_success": True,
+        "delivery_status": "sent",
         "video_clip_path": "",
         "status": status,
         "acknowledged_by": acked_by,

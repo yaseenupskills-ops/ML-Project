@@ -8,6 +8,7 @@ Provides frame capture with buffering and FPS control.
 import cv2
 import threading
 import time
+import uuid
 import logging
 from typing import Optional, Tuple, Generator
 from pathlib import Path
@@ -54,6 +55,7 @@ class CameraManager:
         self.frame_count = 0
         self.start_time = 0
         self.fps_actual = 0.0
+        self._consecutive_read_failures = 0
 
         # Recording state (Phase 3)
         self._recording_active = False
@@ -64,6 +66,7 @@ class CameraManager:
         self._rec_segment_start = None
         self._rec_segment_duration = 300.0
         self._rec_fps = 20.0
+        self.supports_recording = True
         
         logger.info(f"CameraManager initialized: index={camera_index}, "
                    f"resolution={width}x{height}, target_fps={fps}")
@@ -107,6 +110,7 @@ class CameraManager:
         
         self.running = True
         self.frame_count = 0
+        self._consecutive_read_failures = 0
         self.start_time = time.time()
         
         # Start capture thread
@@ -125,10 +129,16 @@ class CameraManager:
             
             ret, frame = self.cap.read()
             if not ret:
-                logger.warning("Failed to read frame")
-                time.sleep(0.01)
+                self._consecutive_read_failures += 1
+                if self._consecutive_read_failures in {1, 5} or self._consecutive_read_failures % 50 == 0:
+                    logger.warning(
+                        "Failed to read frame (%s consecutive failures)",
+                        self._consecutive_read_failures,
+                    )
+                time.sleep(min(0.01 * self._consecutive_read_failures, 1.0))
                 continue
-            
+            self._consecutive_read_failures = 0
+
             # Add to buffer
             with self.buffer_lock:
                 self.frame_buffer.append((time.time(), frame))
@@ -171,7 +181,8 @@ class CameraManager:
         with self.buffer_lock:
             if not self.frame_buffer:
                 return None
-            return self.frame_buffer[-1]
+            timestamp, frame = self.frame_buffer[-1]
+            return timestamp, frame.copy()
     
     # ─── MJPEG Streaming (Phase 3) ──────────────────────────────────────────
 
@@ -285,6 +296,8 @@ class CameraManager:
             return
         ts = time.strftime("%Y%m%d_%H%M%S")
         path = self._record_dir / f"rec_{ts}.mp4"
+        if path.exists():
+            path = self._record_dir / f"rec_{ts}_{uuid.uuid4().hex[:8]}.mp4"
         frame = self.read_frame()
         if frame is None:
             return
@@ -292,6 +305,11 @@ class CameraManager:
         self._rec_writer = cv2.VideoWriter(
             str(path), cv2.VideoWriter_fourcc(*"mp4v"), self._rec_fps, (w, h)
         )
+        if not self._rec_writer.isOpened():
+            logger.error("Could not open recording writer: %s", path)
+            self._rec_writer.release()
+            self._rec_writer = None
+            return
         self._rec_path = path
         self._rec_segment_start = time.time()
         logger.info(f"Recording segment: {path}")
@@ -359,7 +377,7 @@ class CameraManager:
         output_dir = Path(output_dir)
         if not output_dir.exists():
             return 0
-        cutoff = time.time() - max_days * 86400
+        cutoff = time.time() - max(0, int(max_days)) * 86400
         deleted = 0
         for f in output_dir.glob("rec_*.mp4"):
             try:
@@ -480,12 +498,17 @@ class CameraManagerRTSP(CameraManager):
             ret, frame = self.cap.read()
             
             if not ret:
-                logger.warning("RTSP frame read failed, attempting reconnect...")
+                self._consecutive_read_failures += 1
+                logger.warning(
+                    "RTSP frame read failed (%s consecutive failures), reconnecting...",
+                    self._consecutive_read_failures,
+                )
                 self.cap.release()
                 self.cap = None
                 time.sleep(self.reconnect_delay)
                 continue
-            
+            self._consecutive_read_failures = 0
+
             with self.buffer_lock:
                 self.frame_buffer.append((time.time(), frame))
                 if len(self.frame_buffer) > self.buffer_size:
@@ -606,6 +629,7 @@ class VideoFileCamera:
         self.video_fps = 0
         self.total_frames = 0
         self.video_duration = 0
+        self.supports_recording = False
         
         self._supported_formats = {'.mp4', '.avi', '.mov', '.mkv', '.webm', '.flv', '.wmv'}
         
@@ -674,6 +698,7 @@ class VideoFileCamera:
         
         self.running = True
         self.frame_count = 0
+        self._consecutive_read_failures = 0
         self.start_time = time.time()
         
         # Start capture thread
@@ -775,7 +800,8 @@ class VideoFileCamera:
         with self.buffer_lock:
             if not self.frame_buffer:
                 return None
-            return self.frame_buffer[-1]
+            timestamp, frame = self.frame_buffer[-1]
+            return timestamp, frame.copy()
     
     def get_fps(self) -> float:
         """Get actual FPS."""

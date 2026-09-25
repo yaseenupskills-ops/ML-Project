@@ -7,11 +7,10 @@ Implements majority voting and confidence tiering for fall detection.
 import numpy as np
 import pandas as pd
 from typing import List, Tuple, Optional
-import yaml
 import logging
-from pathlib import Path
+
+from project_config import load_config
 from dataclasses import dataclass
-from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -32,13 +31,16 @@ class DecisionLogic:
     
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize with configuration."""
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         dec_config = self.config['decision']
-        self.vote_windows = dec_config['vote_windows']
-        self.high_conf_thresh = dec_config['high_conf']
-        self.low_conf_thresh = dec_config['low_conf']
+        self.vote_windows = int(dec_config['vote_windows'])
+        self.high_conf_thresh = float(dec_config['high_conf'])
+        self.low_conf_thresh = float(dec_config['low_conf'])
+        if self.vote_windows < 1:
+            raise ValueError("decision.vote_windows must be positive")
+        if not 0 <= self.low_conf_thresh <= self.high_conf_thresh <= 1:
+            raise ValueError("decision thresholds must satisfy 0 <= low_conf <= high_conf <= 1")
         
         logger.info(f"DecisionLogic initialized: "
                    f"vote_windows={self.vote_windows}, "
@@ -75,6 +77,10 @@ class DecisionLogic:
         Returns:
             Tuple of (is_fall_detected, avg_confidence, tier)
         """
+        if not probabilities:
+            return False, 0.0, "low"
+        if any(not np.isfinite(float(p)) or not 0 <= float(p) <= 1 for p in probabilities):
+            raise ValueError("Probabilities must be finite values in [0, 1]")
         if len(probabilities) < self.vote_windows:
             # Not enough windows for majority vote
             return False, 0.0, "low"
@@ -82,17 +88,12 @@ class DecisionLogic:
         # Check last N consecutive windows
         recent_probs = probabilities[-self.vote_windows:]
         
-        # Count how many are above low confidence threshold
-        high_conf_count = sum(1 for p in recent_probs if p >= self.low_conf_thresh)
-        
-        # Require majority of recent windows to be at least medium confidence
-        # Actually, let's require all to be above low threshold for safety
-        # Or we could require a majority to be above medium threshold
-        # Let's implement: at least ceil(vote_windows/2) windows above medium threshold
-        medium_count = sum(1 for p in recent_probs if p >= self.high_conf_thresh)
-        required_medium = (self.vote_windows // 2) + 1
-        
-        is_candidate = medium_count >= required_medium
+        # Require a strict majority of the recent windows to meet the high
+        # confidence threshold. The average confidence is reported separately.
+        high_count = sum(1 for p in recent_probs if p >= self.high_conf_thresh)
+        required_high = (self.vote_windows // 2) + 1
+
+        is_candidate = high_count >= required_high
         
         if is_candidate:
             # Use average probability of the voting windows
@@ -117,68 +118,51 @@ class DecisionLogic:
         """
         if probability_col not in df.columns:
             raise ValueError(f"Column {probability_col} not found in DataFrame")
-        
-        # Sort by subject, clip, and time to ensure proper ordering
-        df_sorted = df.sort_values(['subject_id', 'clip_id', 'window_start_time']).reset_index(drop=True)
-        
+        required = {
+            "subject_id", "clip_id", "window_start", "window_end",
+            "window_start_time",
+        }
+        missing = sorted(required - set(df.columns))
+        if missing:
+            raise ValueError(f"Missing prediction columns: {missing}")
+
+        # Sort by subject, clip, and time to ensure proper ordering.
+        df_sorted = df.sort_values(
+            ["subject_id", "clip_id", "window_start_time"]
+        ).reset_index(drop=True)
         fall_events = []
-        
-        # Process each subject/clip combination separately
-        for (subject_id, clip_id), group in df_sorted.groupby(['subject_id', 'clip_id']):
+
+        # Process each subject/clip combination separately.
+        for (subject_id, clip_id), group in df_sorted.groupby(["subject_id", "clip_id"]):
             group = group.reset_index(drop=True)
-            
-            probabilities = group[probability_col].values
-            window_starts = group['window_start'].values
-            window_ends = group['window_end'].values
-            window_times = group['window_start_time'].values
-            
-            # Track voting state
-            consecutive_high_conf = 0
-            candidate_start_idx = None
-            
-            for i, prob in enumerate(probabilities):
-                tier = self.confidence_tier(prob)
-                
-                if tier in ["high", "medium"]:
-                    consecutive_high_conf += 1
-                    if candidate_start_idx is None:
-                        candidate_start_idx = i
-                else:
-                    consecutive_high_conf = 0
-                    candidate_start_idx = None
-                
-                # Check if we have enough consecutive confident windows
-                if consecutive_high_conf >= self.vote_windows:
-                    # We have a candidate fall - use the window that triggered the vote
-                    # Actually, let's use the window at the end of the voting sequence
-                    trigger_idx = i  # Current window
-                    
-                    # Make sure we don't go out of bounds
-                    if trigger_idx < len(probabilities):
-                        trigger_prob = probabilities[trigger_idx]
-                        trigger_tier = self.confidence_tier(trigger_prob)
-                        
-                        # Only trigger if we haven't already reported this event
-                        # Simple deduplication: only report if last event was > 5 seconds ago
-                        if len(fall_events) == 0 or \
-                           (window_times[trigger_idx] - fall_events[-1].timestamp) > 5.0:
-                            
-                            event = FallEvent(
-                                timestamp=float(window_times[trigger_idx]),
-                                confidence=float(trigger_prob),
-                                tier=trigger_tier,
-                                window_start=int(window_starts[trigger_idx]),
-                                window_end=int(window_ends[trigger_idx]),
-                                subject_id=str(subject_id),
-                                clip_id=str(clip_id),
-                                features={}  # Could populate with actual features if needed
-                            )
-                            fall_events.append(event)
-                            logger.info(f"Fall event detected: {event}")
-                            
-                            # Reset to avoid multiple detections from same event
-                            consecutive_high_conf = 0
-                            candidate_start_idx = None
+            probabilities = group[probability_col].astype(float).tolist()
+            window_starts = group["window_start"].values
+            window_ends = group["window_end"].values
+            window_times = group["window_start_time"].values
+            last_event_time = None
+
+            for i in range(len(probabilities)):
+                if i + 1 < self.vote_windows:
+                    continue
+                detected, confidence, tier = self.majority_vote(probabilities[: i + 1])
+                if not detected:
+                    continue
+                event_time = float(window_times[i])
+                if last_event_time is not None and event_time - last_event_time <= 5.0:
+                    continue
+                event = FallEvent(
+                    timestamp=event_time,
+                    confidence=float(confidence),
+                    tier=tier,
+                    window_start=int(window_starts[i]),
+                    window_end=int(window_ends[i]),
+                    subject_id=str(subject_id),
+                    clip_id=str(clip_id),
+                    features={},
+                )
+                fall_events.append(event)
+                last_event_time = event_time
+                logger.info("Fall event detected: %s", event)
         
         logger.info(f"Processed {len(df_sorted)} windows, detected {len(fall_events)} fall events")
         return fall_events

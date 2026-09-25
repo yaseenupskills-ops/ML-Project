@@ -7,9 +7,10 @@ Features include vertical velocity, post-event stillness, and body orientation.
 
 import numpy as np
 import pandas as pd
-from typing import List, Tuple, Optional
-import yaml
+from typing import List
 import logging
+
+from project_config import load_config
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -19,13 +20,19 @@ class FeatureEngineer:
     
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize with configuration."""
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         feat_config = self.config['features']
         self.window_sec = feat_config['window_sec']
         self.overlap = feat_config['overlap']
         self.fps = feat_config['fps']
+        pose_config = self.config.get('pose', {}) or {}
+        self.frame_stride = max(1, int(pose_config.get('frame_stride', 1)))
+        self.sample_fps = self.fps / self.frame_stride
+        if self.window_sec <= 0 or self.fps <= 0:
+            raise ValueError("features.window_sec and features.fps must be positive")
+        if not 0 <= self.overlap < 1:
+            raise ValueError("features.overlap must be in the range [0, 1)")
         
         # MediaPipe Pose keypoint indices
         # Reference: https://google.github.io/mediapipe/solutions/pose.html#pose-landmarks
@@ -58,6 +65,11 @@ class FeatureEngineer:
         logger.info(f"FeatureEngineer initialized: "
                    f"window={self.window_sec}s, overlap={self.overlap}, fps={self.fps}")
     
+    def set_frame_stride(self, frame_stride: int) -> None:
+        """Set the stride used by the live camera feeding this engineer."""
+        self.frame_stride = max(1, int(frame_stride))
+        self.sample_fps = self.fps / self.frame_stride
+
     def compute_vertical_velocity(self, keypoints_seq: List[np.ndarray]) -> np.ndarray:
         """
         Compute vertical velocity (dy/dt) for hip/torso keypoints.
@@ -79,9 +91,9 @@ class FeatureEngineer:
         
         hip_ys = np.array(hip_ys)
         
-        # Compute velocity: difference in y-position over time
-        # Assuming constant time step between frames (1/fps * frame_stride)
-        dt = 1.0 / self.fps  # Time between consecutive processed frames
+        # Time between consecutive processed frames includes any configured
+        # frame stride. Using 1/fps here inflates velocities for strided input.
+        dt = self.frame_stride / self.fps
         velocities = np.diff(hip_ys) / dt
         
         return velocities  # Length T-1
@@ -182,15 +194,15 @@ class FeatureEngineer:
         if len(points) >= 2:
             # Use PCA to find principal axis
             centered = points - np.mean(points, axis=0)
-            _, _, vt = np.linalg.svd(centered.T)
-            principal_axis = vt[0]  # First principal component
+            # V.T contains the principal directions as rows; use the first
+            # right singular vector of the (n_points, 2) matrix.
+            _, _, vh = np.linalg.svd(centered, full_matrices=False)
+            principal_axis = vh[0]
             
-            # Angle from horizontal (x-axis)
-            angle = np.arctan2(principal_axis[1], principal_axis[0])
-            angle_deg = np.abs(np.degrees(angle))
-            
-            # Normalize to 0-90 range (0=vertical, 90=horizontal)
-            return min(angle_deg, 90.0)
+            # Angle away from vertical: upright torso ≈ 0°, horizontal torso
+            # ≈ 90°. This matches the public feature contract and tests.
+            angle = np.arctan2(np.abs(principal_axis[0]), np.abs(principal_axis[1]))
+            return float(min(abs(np.degrees(angle)), 90.0))
         
         return 0.0
     
@@ -227,12 +239,8 @@ class FeatureEngineer:
             }
         
         # 1. Vertical velocity of hips/torso (negative = downward)
-        hip_vel = self.compute_vertical_velocity(window_keypoints)
-        torso_vel = hip_vel  # Using hips as proxy for torso
-        
-        # 2. Post-event stillness: motion in window AFTER this one
-        # (Will be computed separately when we have future context)
-        
+        # 2. Post-event stillness is filled in by compute_features once future
+        #    context is available.
         # 3. Current window characteristics
         hip_ys = []
         for kps in window_keypoints:
@@ -240,8 +248,9 @@ class FeatureEngineer:
             hip_ys.append(np.mean(hip_points))
         hip_ys = np.array(hip_ys)
         
+        hip_vel_window = np.array([])
         if len(hip_ys) > 1:
-            hip_vel_window = np.diff(hip_ys) / (1.0 / self.fps)
+            hip_vel_window = np.diff(hip_ys) / (self.frame_stride / self.fps)
             vel_mean = np.mean(np.abs(hip_vel_window))
             vel_max = np.max(np.abs(hip_vel_window)) if len(hip_vel_window) > 0 else 0.0
         else:
@@ -313,13 +322,23 @@ class FeatureEngineer:
         Returns:
             DataFrame with features for each window
         """
+        if not 0 <= self.overlap < 1:
+            raise ValueError("features.overlap must be in the range [0, 1)")
         if len(keypoints_seq) < 2:
             logger.warning(f"Sequence too short for feature extraction: {len(keypoints_seq)} frames")
             return pd.DataFrame()
+        invalid_shapes = [
+            index for index, frame in enumerate(keypoints_seq)
+            if np.asarray(frame).shape != (33, 3)
+        ]
+        if invalid_shapes:
+            raise ValueError(f"Expected keypoint frames shaped (33, 3); invalid indices: {invalid_shapes[:5]}")
+        if any(not np.isfinite(np.asarray(frame)).all() for frame in keypoints_seq):
+            raise ValueError("Keypoint frames must contain only finite values")
         
         # Window parameters
-        window_length = int(self.window_sec * self.fps)
-        step_size = int(window_length * (1 - self.overlap))
+        window_length = max(2, int(round(self.window_sec * self.sample_fps)))
+        step_size = max(1, int(round(window_length * (1 - self.overlap))))
         
         if window_length < 2:
             window_length = 2
@@ -341,8 +360,8 @@ class FeatureEngineer:
             feats['clip_id'] = clip_id
             feats['window_start'] = start_idx
             feats['window_end'] = end_idx
-            feats['window_start_time'] = start_idx / self.fps
-            feats['window_end_time'] = end_idx / self.fps
+            feats['window_start_time'] = start_idx / self.sample_fps
+            feats['window_end_time'] = end_idx / self.sample_fps
             
             window_features.append(feats)
             window_starts.append(start_idx)
@@ -355,25 +374,30 @@ class FeatureEngineer:
         motion_mags = self.compute_motion_magnitude(keypoints_seq)
         
         for i, feats in enumerate(window_features):
-            # Find motion magnitude window that follows this window
-            win_end_time = feats['window_end_time']
-            stillness_start_idx = int(win_end_time * self.fps)
+            # motion_mags[i] describes the transition from frame i to i+1.
+            # The first transition after an exclusive window ending at
+            # ``window_end_idx`` therefore starts at ``window_end_idx - 1``.
+            win_end_idx = int(feats['window_end'])
+            stillness_start_idx = max(0, win_end_idx - 1)
             stillness_end_idx = stillness_start_idx + window_length
-            
-            # Ensure we don't go beyond available motion data
             if stillness_end_idx <= len(motion_mags):
                 stillness_window = motion_mags[stillness_start_idx:stillness_end_idx]
-                if len(stillness_window) > 0:
-                    feats['stillness_post'] = np.mean(stillness_window)
-                else:
-                    feats['stillness_post'] = 0.0
+                feats['stillness_post'] = float(np.mean(stillness_window)) if len(stillness_window) else 0.0
             else:
-                feats['stillness_post'] = 0.0  # No future data available
+                # This is expected for the newest live windows. Keep the
+                # sentinel explicit rather than silently using partial data.
+                feats['stillness_post'] = 0.0
             
             features_list.append(feats)
         
         if len(features_list) == 0:
-            logger.warning("No features extracted - check window parameters")
+            if len(keypoints_seq) < window_length:
+                logger.debug(
+                    "Waiting for a complete feature window: %s/%s frames",
+                    len(keypoints_seq), window_length,
+                )
+            else:
+                logger.warning("No features extracted - check window parameters")
             return pd.DataFrame()
         
         df = pd.DataFrame(features_list)

@@ -2,6 +2,7 @@
 # Archives the current alert log and starts a fresh empty one for the demo.
 # Run this from the project root (where logs/alerts.jsonl lives).
 set -euo pipefail
+umask 077
 
 LOG_PATH="logs/alerts.jsonl"
 ARCHIVE_DIR="logs/archive"

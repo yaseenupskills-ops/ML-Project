@@ -28,6 +28,15 @@ logs/
 
 # Config with secrets (email credentials)
 config.yaml
+.env
+.env.*
+!.env.example
+
+# Local runtime output
+logs_dashboard_run.log
+frontend/.next/
+frontend/node_modules/
+backend/.env
 
 # OS files
 .DS_Store

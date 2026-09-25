@@ -34,7 +34,12 @@ streaming:
   port: 8091                   # HTTP port for stream + metrics
   jpeg_quality: 80             # JPEG quality (0-100)
   max_fps: 15                  # Max frames/sec served to viewers
-  allow_remote: false          # If true, binds 0.0.0.0 (NOT recommended)
+  allow_remote: false          # Keep false; remote access requires a secured proxy
+  allowed_origins:
+    - "http://localhost:8501"
+    - "http://127.0.0.1:8501"
+    - "http://localhost:3000"
+    - "http://127.0.0.1:3000"
 
 # ─── Recording (opt-in, privacy) ─────────────────────────────────────────────
 recording:
@@ -80,9 +85,9 @@ grace_period:
 email:
   smtp_host: "smtp.gmail.com"
   smtp_port: 587
-  sender: ""                   # Your Gmail address
-  app_password: ""             # 16-char app password (not your regular password)
-  recipient: ""                # Caretaker/family contact email
+  sender: ""                   # Or set FALLGUARD_EMAIL_SENDER
+  app_password: ""             # Prefer FALLGUARD_EMAIL_APP_PASSWORD; never commit it
+  recipient: ""                # Or set FALLGUARD_EMAIL_RECIPIENT
   subject_fallback: "⚠️ Fall Detection Alert"
 
 # ─── Escalation (Phase 2 - Alert Management) ───────────────────────────────────
@@ -90,6 +95,24 @@ escalation:
   notify_on_escalate: true             # Re-email the caregiver when caregiver/admin escalates
   notify_on_auto_escalate: true        # Re-email when the system auto-escalates a stale alert
   auto_escalate_after_sec: 180         # Auto-escalate pending alerts older than this (0 = disabled)
+
+# ─── Dashboard ─────────────────────────────────────────────────────────────────
+dashboard:
+  auto_refresh_interval: 30
+  table:
+    page_size: 50
+    scroll_height: "600px"
+
+# ─── Authentication ───────────────────────────────────────────────────────────
+# Keep auth enabled outside local development. Never commit real credentials.
+auth:
+  enabled: true
+  jwt_secret: ""  # Set via FALLGUARD_AUTH_SECRET in deployment
+  token_expiry_hours: 24
+  users: []
+  # Optional role defaults; per-user assigned_subjects takes precedence.
+  role_permissions:
+    caregiver: ["S1", "S2", "S3"]
 
 # ─── Paths ────────────────────────────────────────────────────────────────────
 paths:

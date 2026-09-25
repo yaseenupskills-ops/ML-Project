@@ -1,5 +1,10 @@
 # Fall Detection System Report
 
+> **Evaluation status: provisional.** The current processed feature artifact uses
+> one dataset-level subject ID, and the saved report was not produced from a
+> verified actor-held-out split. Regenerate metrics after fixing dataset
+> provenance and evaluation before citing them.
+
 ## Methodology
 
 This system implements a privacy-preserving fall detection pipeline that processes video streams entirely on-device, extracting only pose keypoints for analysis.
@@ -11,14 +16,13 @@ This system implements a privacy-preserving fall detection pipeline that process
 4. **Decision Logic**: Majority voting across windows + confidence tiers
 5. **Grace Period**: 20-second confirmation window to reduce false alarms
 6. **Alert System**: Email/SMS notification to caretakers
-7. **Dashboard**: Alert history only (privacy-first design)
+7. **Dashboard**: Caregiver overview, alert workflow, local live monitor, and privacy status
 
 ### Key Design Decisions
-- **On-device processing**: No video frames saved or transmitted
-- **Pose-only approach**: Only keypoint data (x,y,visibility) processed
-- **Subject-independent evaluation**: Prevents data leakage across actors
-- **Multi-class classification**: Distinguishes falls from sitting/lying down
-- **Grace period**: User confirmation reduces false alarm burden on caregivers
+- **On-device processing**: Raw frames are not stored or transmitted by default
+- **Pose-only approach**: Only keypoint data (x,y,visibility) is analyzed
+- **Evaluation**: Actor-held-out results must be regenerated from verified metadata
+- **Grace period**: User confirmation reduces false-alarm burden on caregivers
 
 ## Dataset Information
 
@@ -131,12 +135,13 @@ Estimated false positive reduction from:
 [Alert (Email/SMS only)] → [Dashboard (logs only)]
 ```
 
-### Privacy Guarantees Verified
-- [ ] No cv2.imwrite() calls in codebase
-- [ ] No network transmission of video/images
-- [ ] All inference occurs on same device as camera input
-- [ ] Only alert messages transmitted externally
-- [ ] Dashboard shows alert history only (no behavioral data)
+### Privacy Controls
+- [x] No raw-frame writes in the default inference path
+- [x] No remote video transmission; local stream endpoints require a per-process token
+- [x] All inference occurs on same device as camera input
+- [x] Only alert metadata is transmitted externally
+- [x] Recording is opt-in, local, admin-controlled, and retention-limited
+- [x] Dashboard avoids activity-pattern reporting by default
 
 ### Limitations & Assumptions
 - **Dataset limitation**: Actor-performed falls in controlled settings
@@ -169,10 +174,10 @@ Estimated false positive reduction from:
 The implemented system provides a privacy-preserving approach to fall detection that balances detection performance with user autonomy through the grace period mechanism. While limited by the actor-based datasets used for training, the architecture is sound and ready for real-world validation.
 
 The system successfully demonstrates:
-- On-device processing with no video storage or transmission
+- On-device processing with raw-frame storage/transmission disabled by default; opt-in recordings remain local
 - Effective fall detection using pose keypoints only
 - User-centered design with confirmation window to reduce false alarms
 - Privacy-first dashboard showing only essential alert information
-- Proper evaluation methodology with subject-independent splits
+- Evaluation workflow supports held-out subject splits; current saved metrics remain provisional until actor metadata is verified
 
 Future work will focus on validating with real elderly populations and extending the sensor suite while maintaining the core privacy principles.

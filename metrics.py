@@ -29,6 +29,7 @@ _state = {
     "recording_active": False,
     "last_frame_ts": None,
     "source": None,
+    "source_type": "unknown",
     "started_at": time.time(),
     "last_update": 0.0,
 }
@@ -42,6 +43,32 @@ def update(**kwargs):
     with _lock:
         _state.update(kwargs)
         _state["last_update"] = time.time()
+
+
+def increment(key: str, amount: float = 1.0) -> None:
+    """Atomically increment a numeric metric."""
+    with _lock:
+        _state[key] = _state.get(key, 0) + amount
+
+
+def reset_runtime(started_at: float | None = None) -> None:
+    """Reset process-local runtime counters at an explicit session boundary."""
+    global _alert_events
+    with _lock:
+        _state.update({
+            "camera_online": False,
+            "camera_available": False,
+            "fps": 0.0,
+            "pipeline_running": False,
+            "frames_processed": 0,
+            "windows_evaluated": 0,
+            "alerts_triggered": 0,
+            "fall_candidates": 0,
+            "recording_active": False,
+            "last_frame_ts": None,
+            "started_at": time.time() if started_at is None else started_at,
+        })
+        _alert_events = deque(maxlen=2000)
 
 
 def get() -> dict:

@@ -5,13 +5,16 @@ Extracts body keypoints from video using MediaPipe Pose.
 Outputs only keypoint sequences (no frames saved to disk).
 """
 
+from __future__ import annotations
+
 import cv2
 import mediapipe as mp
 import numpy as np
 from pathlib import Path
 from typing import List, Generator, Optional, Tuple
-import yaml
 import logging
+
+from project_config import load_config
 
 logger = logging.getLogger(__name__)
 
@@ -20,17 +23,28 @@ class PoseExtractor:
     
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize with configuration."""
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         pose_config = self.config['pose']
         self.frame_stride = pose_config['frame_stride']
         self.smooth_window = pose_config['smooth_window']
         self.min_confidence = pose_config['min_confidence']
+        if self.frame_stride < 1 or self.smooth_window < 1:
+            raise ValueError("pose.frame_stride and pose.smooth_window must be positive")
+        if not 0 <= self.min_confidence <= 1:
+            raise ValueError("pose.min_confidence must be between 0 and 1")
         
+        # Resolve the bundled model relative to the project, not the caller's cwd.
+        self.model_path = Path(__file__).resolve().parent / 'models' / 'pose_landmarker_lite.task'
+        if not self.model_path.exists():
+            raise FileNotFoundError(
+                f"Pose landmarker model not found: {self.model_path}. "
+                "Run the project setup/model-download step first."
+            )
+
         # Initialize MediaPipe Pose Landmarker (Tasks API)
         self.base_options = mp.tasks.BaseOptions(
-            model_asset_path='models/pose_landmarker_lite.task'
+            model_asset_path=str(self.model_path)
         )
         self.options = mp.tasks.vision.PoseLandmarkerOptions(
             base_options=self.base_options,
@@ -49,7 +63,27 @@ class PoseExtractor:
                    f"frame_stride={self.frame_stride}, "
                    f"smooth_window={self.smooth_window}, "
                    f"min_confidence={self.min_confidence}")
-     
+
+    def reset(self) -> None:
+        """Clear temporal state before starting a new sequence."""
+        self.keypoint_buffer.clear()
+
+    def close(self) -> None:
+        """Release the MediaPipe landmarker."""
+        detector = getattr(self, "detector", None)
+        if detector is not None:
+            try:
+                detector.close()
+            except Exception:
+                logger.debug("Pose landmarker close failed", exc_info=True)
+            self.detector = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.close()
+
     def extract_keypoints_from_frame(self, frame: np.ndarray) -> Optional[np.ndarray]:
         """
         Extract pose keypoints from a single frame.
@@ -61,6 +95,8 @@ class PoseExtractor:
             Array of shape (33, 3) with [x, y, visibility] for each keypoint,
             or None if pose not detected with sufficient confidence
         """
+        if frame is None or getattr(frame, "ndim", 0) != 3 or frame.shape[2] != 3:
+            raise ValueError("Expected a BGR frame with shape (H, W, 3)")
         # Convert BGR to RGB
         rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         
@@ -101,38 +137,82 @@ class PoseExtractor:
         return keypoints
     
     def process_video(self, video_path: str) -> Generator[Tuple[float, Optional[np.ndarray]], None, None]:
-        """
-        Process video file and yield timestamps and keypoints.
-        
-        Args:
-            video_path: Path to video file
-            
-        Yields:
-            Tuple of (timestamp_seconds, keypoints_array or None)
-        """
+        """Process a video and yield ``(timestamp, keypoints_or_none)`` pairs."""
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             raise IOError(f"Cannot open video file: {video_path}")
-        
-        fps = cap.get(cv2.CAP_PROP_FPS)
+
+        fps = float(cap.get(cv2.CAP_PROP_FPS) or 0.0)
+        if fps <= 0:
+            cap.release()
+            raise IOError(f"Video has an invalid FPS: {video_path}")
+
+        self.reset()
         frame_count = 0
-        
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                break
-            
-            timestamp = frame_count / fps
-            
-            # Process every Nth frame based on frame_stride
-            if frame_count % self.frame_stride == 0:
-                keypoints = self.extract_keypoints_from_frame(frame)
-                smoothed_keypoints = self.smooth_keypoints(keypoints) if keypoints is not None else None
-                yield timestamp, smoothed_keypoints
-            
-            frame_count += 1
-        
-        cap.release()
-        # Flush any remaining buffered keypoints
-        if len(self.keypoint_buffer) > 0:
-            yield timestamp, self.smooth_keypoints(np.zeros((33, 3)))  # Return zeros to flush buffer
+        try:
+            while True:
+                ret, frame = cap.read()
+                if not ret:
+                    break
+
+                timestamp = frame_count / fps
+                if frame_count % self.frame_stride == 0:
+                    keypoints = self.extract_keypoints_from_frame(frame)
+                    smoothed = self.smooth_keypoints(keypoints) if keypoints is not None else None
+                    yield timestamp, smoothed
+                frame_count += 1
+        finally:
+            cap.release()
+            self.reset()
+
+
+def extract_keypoints_from_video(
+    video_path: str,
+    config_path: str = "config.yaml",
+) -> List[np.ndarray]:
+    """Extract a compact keypoint sequence from one video file.
+
+    This helper is intentionally small and is used by the feature CLI. It does
+    not write frames or videos to disk.
+    """
+    extractor = PoseExtractor(config_path)
+    try:
+        return [
+            keypoints
+            for _, keypoints in extractor.process_video(video_path)
+            if keypoints is not None
+        ]
+    finally:
+        extractor.close()
+
+
+def main() -> int:
+    """Extract one video's pose sequence to a compact .npy file."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Extract MediaPipe pose keypoints from a video")
+    parser.add_argument("video", help="Input video path")
+    parser.add_argument(
+        "-o", "--output",
+        default=None,
+        help="Output .npy path (default: data/processed/keypoints/<video-stem>.npy)",
+    )
+    parser.add_argument("--config", default="config.yaml")
+    args = parser.parse_args()
+
+    output = Path(args.output) if args.output else (
+        Path(__file__).resolve().parent / "data" / "processed" / "keypoints" /
+        (Path(args.video).stem + ".npy")
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    sequence = extract_keypoints_from_video(args.video, args.config)
+    if not sequence:
+        print("No pose keypoints detected; no output written.")
+        return 1
+    np.save(output, np.asarray(sequence, dtype=np.float32))
+    print(f"Saved {len(sequence)} keypoint frames to {output}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

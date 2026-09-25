@@ -6,24 +6,22 @@ Used for testing and demonstration.
 """
 
 import numpy as np
-import pandas as pd
 import time
 import logging
 from typing import Generator, Optional, Tuple, List
 from pathlib import Path
-import yaml
-import json
-import signal
+
+from project_config import load_config
 import sys
 
 # Import our modules
 from pose_extraction import PoseExtractor
 from features import FeatureEngineer
 from model_rf import FallDetectionRF
-from decision_logic import DecisionLogic, FallEvent
+from decision_logic import DecisionLogic
 from grace_period import GracePeriodManager, simulate_grace_period
 from alert import AlertManager
-from camera import CameraManager, VideoFileCamera, create_camera
+from camera import VideoFileCamera, create_camera
 import metrics
 
 logger = logging.getLogger(__name__)
@@ -34,8 +32,7 @@ class FallDetectionSimulator:
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize simulator with all pipeline components."""
         self.config_path = config_path
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         # Initialize pipeline components
         self.pose_extractor = PoseExtractor(config_path)
@@ -123,17 +120,10 @@ class FallDetectionSimulator:
             logger.error(f"Failed to prepare features for model: {e}")
             return
         
-        # Scale features
-        try:
-            X_scaled = self.model.scaler.transform(X)
-        except Exception as e:
-            logger.error(f"Failed to scale features: {e}")
-            return
-        
-        # Model inference
+        # Model inference. ``predict_proba`` applies the fitted scaler once.
         start_time = time.time()
         try:
-            fall_probabilities = self.model.predict_proba(X_scaled)
+            fall_probabilities = self.model.predict_proba(X)
             inference_time = (time.time() - start_time) * 1000
             self.stats['processing_time_ms'] += inference_time
             metrics.update(pipeline_latency_ms=round(inference_time, 2))
@@ -172,7 +162,9 @@ class FallDetectionSimulator:
         for event in fall_events:
             # Convert FallEvent to dict for grace period
             event_dict = {
-                'timestamp': event.timestamp,
+                # Decision windows use source-relative seconds; alert records
+                # need an absolute Unix timestamp for response-time analysis.
+                'timestamp': event.timestamp if event.timestamp > 1_000_000_000 else time.time(),
                 'subject_id': event.subject_id,
                 'clip_id': event.clip_id,
                 'confidence': event.confidence,
@@ -193,7 +185,6 @@ class FallDetectionSimulator:
                 'grace_time_ms': grace_time
             })
             
-            self.stats['windows_evaluated'] += 1
             if grace_result.alert_triggered:
                 self.stats['alerts_triggered'] += 1
                 metrics.register_alert(grace_result.timestamp or time.time())
@@ -417,6 +408,9 @@ class FallDetectionSimulator:
                     continue
                 
                 # Extract features
+                self.feature_engineer.set_frame_stride(
+                    int(cam_config.get('frame_stride', 1))
+                )
                 features_df = self.feature_engineer.compute_features(
                     keypoint_buffer, subject_id='live', clip_id='live'
                 )
@@ -431,11 +425,8 @@ class FallDetectionSimulator:
                 try:
                     X, _, _ = self.model.prepare_features(features_df_with_label)
                     
-                    # Scale features
-                    X_scaled = self.model.scaler.transform(X)
-                    
-                    # Model inference
-                    fall_probabilities = self.model.predict_proba(X_scaled)
+                    # Model inference. The model wrapper applies scaling once.
+                    fall_probabilities = self.model.predict_proba(X)
                     
                     # Extract positive class probability (class 1 = fall)
                     if fall_probabilities.ndim == 2 and fall_probabilities.shape[1] == 2:
@@ -470,7 +461,7 @@ class FallDetectionSimulator:
                             
                             # Send alert
                             event_dict = {
-                                'timestamp': event.timestamp,
+                                'timestamp': time.time(),
                                 'subject_id': event.subject_id,
                                 'clip_id': event.clip_id,
                                 'confidence': event.confidence,
@@ -487,7 +478,6 @@ class FallDetectionSimulator:
                     logger.error(f"Processing error: {e}")
                     continue
                 
-                frame_count += 1
                 metrics.update(
                     frames_processed=frame_count,
                     fps=round(getattr(cam, 'fps_actual', 0.0), 2),
@@ -509,12 +499,35 @@ class FallDetectionSimulator:
         stats['fps'] = frame_count / (time.time() - start_time) if time.time() > start_time else 0
         stats['total_frames'] = frame_count
         
+        summary = {
+            'frames_processed': frame_count,
+            'windows_evaluated': stats['windows_evaluated'],
+            'fall_candidates': stats['fall_candidates'],
+            'alerts_triggered': stats['alerts_triggered'],
+            'false_positives_cancelled': stats['false_positives_cancelled'],
+        }
         return {
             'subject_id': 'live',
             'clip_id': 'live',
             'total_frames': frame_count,
-            'stats': stats
+            'stats': stats,
+            'summary': summary,
         }
+
+def simulate_from_keypoints_file(
+    keypoints_file: str,
+    model_path: str,
+    subject_id: str = "unknown",
+    clip_id: str = "unknown",
+    config_path: str = "config.yaml",
+) -> dict:
+    """Run the simulator for one saved keypoint file."""
+    simulator = FallDetectionSimulator(config_path)
+    simulator.load_model(model_path)
+    return simulator.simulate_from_file(
+        Path(keypoints_file), subject_id=subject_id, clip_id=clip_id
+    )
+
 
 def simulate_stream(keypoints_directory: str,
                     model_path: str,
@@ -580,7 +593,6 @@ def evaluate_simulation_results(results: List[dict]) -> dict:
         Dictionary with aggregated metrics
     """
     total_frames = 0
-    total_frames = 0
     total_windows = 0
     total_candidates = 0
     total_alerts = 0
@@ -594,8 +606,7 @@ def evaluate_simulation_results(results: List[dict]) -> dict:
             continue
             
         stats = result['stats']
-        summary = result['summary']
-        
+
         total_frames += stats['frames_processed']
         total_windows += stats['windows_evaluated']
         total_candidates += stats['fall_candidates']
@@ -653,7 +664,6 @@ def evaluate_simulation_results(results: List[dict]) -> dict:
 
 if __name__ == "__main__":
     # Example usage
-    import sys
     logging.basicConfig(level=logging.INFO)
     
     if len(sys.argv) < 2:

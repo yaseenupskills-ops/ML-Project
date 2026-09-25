@@ -1,4 +1,7 @@
 {
+  "status": "provisional",
+  "valid_for_claims": false,
+  "warning": "Regenerate after creating actor-level subject IDs and a verified held-out subject split.",
   "dataset_info": {
     "total_samples": 104,
     "train_samples": 87,

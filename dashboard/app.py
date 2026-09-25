@@ -1,9 +1,9 @@
 """
 Dashboard Module
 ----------------
-Fall Detection System for Elderly Care — clinical light UI built on native
-Streamlit widgets (st.navigation, st.metric, st.pills, st.dataframe selection,
-st.status, st.badge) with a thin CSS layer for spacing/typography.
+Fall Detection System for Elderly Care — caregiver-first safety operations
+console built on Streamlit with custom status surfaces, a privacy-forward
+visual system, and native alert/live workflows.
 """
 
 import streamlit as st
@@ -22,33 +22,38 @@ import json
 import time
 import hashlib
 import hmac
+import html
 import urllib.request
 import urllib.error
+import urllib.parse
 from datetime import datetime
-from typing import Optional, Dict, List
+from typing import Optional
 import logging
+
+from alert_store import AlertStore
+from project_config import PROJECT_ROOT, load_config, resolve_path, validate_config
 
 logger = logging.getLogger(__name__)
 
-ALERT_LOG = Path("logs/alerts.jsonl")
+ALERT_LOG = resolve_path("logs/alerts.jsonl", base=PROJECT_ROOT)
 
-# ─── Light theme base colors (native widgets use .streamlit/config.toml) ──────
-_BG = "#f6f8fb"
-_SURFACE = "#ffffff"
-_BORDER = "#e2e8f0"
-_TEXT = "#0f172a"
-_SUB = "#475569"
-_MUTED = "#94a3b8"
-_PRIMARY = "#0f766e"
-_GREEN = "#16a34a"
-_AMBER = "#d97706"
-_RED = "#dc2626"
+# ─── Midnight Safety Operations theme tokens ─────────────────────────────────
+_BG = "#0b1220"
+_SURFACE = "#111c2e"
+_BORDER = "#243b53"
+_TEXT = "#f4f7fb"
+_SUB = "#9fb3c8"
+_MUTED = "#71869c"
+_PRIMARY = "#5eead4"
+_GREEN = "#34d399"
+_AMBER = "#fbbf24"
+_RED = "#fb7185"
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LIGHT THEME CSS  (minimal: spacing, typography, and the few custom surfaces)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-LIGHT_CSS = f"""
+THEME_CSS = f"""
 <style>
 .stApp {{
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
@@ -84,6 +89,380 @@ h1, h2, h3 {{
 code, [data-testid="stToolbarButton"] {{
     font-size: 0.85rem;
 }}
+/* Caregiver-first visual system: calm surfaces, clear hierarchy, generous targets. */
+[data-testid="stMetric"] {{
+    background: {_SURFACE};
+    border: 1px solid {_BORDER};
+    border-radius: 14px;
+    padding: 0.9rem 1rem;
+    min-height: 92px;
+}}
+[data-testid="stDataFrame"] {{
+    border: 1px solid {_BORDER};
+    border-radius: 12px;
+    overflow: hidden;
+}}
+[data-testid="stButton"] button {{
+    min-height: 42px;
+    border-radius: 10px;
+    font-weight: 600;
+}}
+button:focus-visible, a:focus-visible, input:focus-visible {{
+    outline: 3px solid rgba(15, 118, 110, 0.35) !important;
+    outline-offset: 2px !important;
+}}
+@media (max-width: 720px) {{
+    .main .block-container {{ padding-left: 1rem !important; padding-right: 1rem !important; }}
+    h1 {{ font-size: 1.8rem !important; }}
+}}
+/* ── Product surfaces ───────────────────────────────────────────────────── */
+:root {{
+    --fg-ink: #102a43;
+    --fg-muted: #627d98;
+    --fg-soft: #f0f4f8;
+    --fg-teal: #0f766e;
+    --fg-navy: #102a43;
+    --fg-radius: 18px;
+}}
+header[data-testid="stHeader"] {{ background: transparent; height: 0; }}
+.stApp {{
+    background:
+        radial-gradient(circle at 85% -10%, rgba(20, 184, 166, 0.08), transparent 32rem),
+        linear-gradient(180deg, #f8fbfd 0%, #f3f7fa 100%);
+}}
+.main .block-container {{ max-width: 1440px !important; padding-top: 1.6rem !important; }}
+section[data-testid="stSidebar"] {{ width: 252px !important; }}
+section[data-testid="stSidebar"] [data-testid="stNav"] {{ padding-top: 0.45rem; }}
+section[data-testid="stSidebar"] [data-testid="stNavLink"] {{
+    border-radius: 11px;
+    margin: 0.18rem 0;
+    padding: 0.55rem 0.7rem;
+    color: #486581;
+    font-weight: 600;
+}}
+section[data-testid="stSidebar"] [data-testid="stNavLink"]:hover {{
+    background: #e8f5f3;
+    color: #0f766e;
+}}
+section[data-testid="stSidebar"] [aria-current="page"] {{
+    background: #dff3ef !important;
+    color: #0f766e !important;
+}}
+.fg-eyebrow {{
+    color: #829ab1;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+}}
+.fg-page-title {{
+    color: #102a43;
+    font-size: clamp(1.75rem, 3vw, 2.55rem);
+    font-weight: 760;
+    letter-spacing: -0.045em;
+    line-height: 1.05;
+    margin: 0.18rem 0 0.42rem;
+}}
+.fg-page-subtitle {{
+    color: #627d98;
+    font-size: 0.98rem;
+    margin: 0 0 1.25rem;
+}}
+.fg-topbar {{
+    align-items: center;
+    background: rgba(255,255,255,0.88);
+    border: 1px solid #d9e2ec;
+    border-radius: 16px;
+    box-shadow: 0 10px 30px rgba(16,42,67,0.05);
+    display: flex;
+    justify-content: space-between;
+    margin: 0 0 1.35rem;
+    padding: 0.78rem 1rem;
+}}
+.fg-brand {{
+    align-items: center;
+    color: #102a43;
+    display: flex;
+    font-size: 0.92rem;
+    font-weight: 800;
+    gap: 0.58rem;
+}}
+.fg-brand-mark {{
+    align-items: center;
+    background: #102a43;
+    border-radius: 10px;
+    color: #5eead4;
+    display: inline-flex;
+    font-size: 1rem;
+    height: 30px;
+    justify-content: center;
+    width: 30px;
+}}
+.fg-topbar-meta {{ color: #627d98; font-size: 0.78rem; font-weight: 600; }}
+.fg-status-dot {{
+    border-radius: 999px;
+    display: inline-block;
+    height: 8px;
+    margin-right: 0.38rem;
+    width: 8px;
+}}
+.fg-status-strip {{
+    display: grid;
+    gap: 0.75rem;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin: 0.2rem 0 1.4rem;
+}}
+.fg-stat-card {{
+    background: #ffffff;
+    border: 1px solid #d9e2ec;
+    border-radius: var(--fg-radius);
+    box-shadow: 0 8px 24px rgba(16,42,67,0.045);
+    min-height: 112px;
+    padding: 1rem 1.1rem;
+}}
+.fg-stat-label {{ color: #627d98; font-size: 0.72rem; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; }}
+.fg-stat-value {{ color: #102a43; font-size: 1.65rem; font-weight: 780; letter-spacing: -0.04em; margin-top: 0.42rem; }}
+.fg-stat-note {{ color: #829ab1; font-size: 0.76rem; margin-top: 0.22rem; }}
+.fg-stat-card.fg-attention {{ border-color: #f5c26b; background: #fffaf0; }}
+.fg-stat-card.fg-urgent {{ border-color: #ef9a9a; background: #fff7f7; }}
+.fg-stat-card.fg-healthy {{ border-color: #9bd8cb; background: #f5fffc; }}
+.fg-badge {{
+    border-radius: 999px;
+    display: inline-flex;
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    padding: 0.3rem 0.58rem;
+    text-transform: uppercase;
+}}
+.fg-badge-green {{ background: #dff7ee; color: #087f5b; }}
+.fg-badge-amber {{ background: #fff0c7; color: #a15c00; }}
+.fg-badge-red {{ background: #ffe0e0; color: #b42318; }}
+.fg-badge-blue {{ background: #e4f0ff; color: #175cd3; }}
+.fg-badge-gray {{ background: #e9eff5; color: #486581; }}
+.fg-panel {{
+    background: #ffffff;
+    border: 1px solid #d9e2ec;
+    border-radius: var(--fg-radius);
+    box-shadow: 0 8px 24px rgba(16,42,67,0.045);
+    padding: 1.15rem 1.2rem;
+}}
+.fg-panel-dark {{
+    background: #102a43;
+    border: 1px solid #243b53;
+    border-radius: var(--fg-radius);
+    color: #f0f4f8;
+    padding: 1.1rem 1.2rem;
+}}
+.fg-panel-title {{ color: #102a43; font-size: 1.02rem; font-weight: 800; margin-bottom: 0.65rem; }}
+.fg-panel-dark .fg-panel-title {{ color: #f0f4f8; }}
+.fg-panel-copy {{ color: #627d98; font-size: 0.82rem; line-height: 1.55; }}
+.fg-queue-row {{
+    align-items: center;
+    background: #ffffff;
+    border: 1px solid #d9e2ec;
+    border-radius: 15px;
+    display: flex;
+    gap: 0.8rem;
+    justify-content: space-between;
+    margin: 0.55rem 0;
+    padding: 0.8rem 0.9rem;
+}}
+.fg-queue-row:hover {{ border-color: #8acfc3; box-shadow: 0 6px 18px rgba(15,118,110,0.08); }}
+.fg-queue-main {{ min-width: 0; }}
+.fg-queue-subject {{ color: #102a43; font-size: 0.95rem; font-weight: 800; }}
+.fg-queue-meta {{ color: #829ab1; font-size: 0.74rem; margin-top: 0.22rem; }}
+.fg-queue-right {{ align-items: flex-end; display: flex; flex-direction: column; gap: 0.35rem; }}
+.fg-privacy-banner {{
+    align-items: flex-start;
+    background: #e8f7f4;
+    border: 1px solid #b7e5dc;
+    border-radius: 14px;
+    color: #17665c;
+    display: flex;
+    font-size: 0.8rem;
+    gap: 0.55rem;
+    line-height: 1.45;
+    padding: 0.78rem 0.9rem;
+}}
+.fg-live-frame {{
+    background: #081421;
+    border: 1px solid #243b53;
+    border-radius: 18px;
+    box-shadow: 0 16px 40px rgba(8,20,33,0.22);
+    overflow: hidden;
+}}
+.fg-live-frame img {{ display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: contain; }}
+.fg-live-label {{
+    align-items: center;
+    background: rgba(8,20,33,0.82);
+    border: 1px solid rgba(94,234,212,0.35);
+    border-radius: 999px;
+    color: #5eead4;
+    display: inline-flex;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.68rem;
+    font-weight: 800;
+    gap: 0.42rem;
+    left: 0.9rem;
+    letter-spacing: 0.1em;
+    padding: 0.42rem 0.68rem;
+    position: absolute;
+    top: 0.9rem;
+}}
+.fg-live-wrap {{ position: relative; }}
+.fg-kicker-row {{ align-items: center; display: flex; justify-content: space-between; margin-bottom: 0.55rem; }}
+.fg-subtle {{ color: #829ab1; font-size: 0.76rem; }}
+.fg-health-row {{ align-items: center; border-bottom: 1px solid #edf2f7; display: flex; justify-content: space-between; padding: 0.62rem 0; }}
+.fg-health-row:last-child {{ border-bottom: 0; }}
+.fg-health-label {{ color: #627d98; font-size: 0.82rem; }}
+.fg-health-value {{ color: #102a43; font-size: 0.82rem; font-weight: 750; text-align: right; }}
+@media (max-width: 760px) {{
+    .fg-status-strip {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
+    .fg-topbar {{ align-items: flex-start; flex-direction: column; gap: 0.5rem; }}
+    .fg-queue-row {{ align-items: flex-start; flex-direction: column; }}
+    .fg-queue-right {{ align-items: flex-start; flex-direction: row; flex-wrap: wrap; }}
+}}
+/* ── Midnight Safety Operations overrides ───────────────────────────────── */
+:root {{
+    --fg-ink: #f4f7fb;
+    --fg-muted: #9fb3c8;
+    --fg-soft: #16263b;
+    --fg-teal: #5eead4;
+    --fg-navy: #0b1220;
+    --fg-radius: 16px;
+}}
+.stApp, .stApp [data-testid="stAppViewContainer"] {{
+    background: #0b1220 !important;
+    color: #f4f7fb !important;
+}}
+.stApp [data-testid="stHeader"] {{ background: transparent !important; }}
+.main .block-container {{
+    background: linear-gradient(180deg, #0b1220 0%, #0e1929 100%) !important;
+    max-width: 1480px !important;
+}}
+section[data-testid="stSidebar"] {{
+    background: #0b1220 !important;
+    border-right: 1px solid #243b53 !important;
+}}
+section[data-testid="stSidebar"] * {{ color: #9fb3c8 !important; }}
+section[data-testid="stSidebar"] [data-testid="stNavLink"] {{
+    background: transparent !important;
+    color: #9fb3c8 !important;
+}}
+section[data-testid="stSidebar"] [data-testid="stNavLink"]:hover {{
+    background: #16263b !important;
+    color: #5eead4 !important;
+}}
+section[data-testid="stSidebar"] [aria-current="page"] {{
+    background: #123b42 !important;
+    color: #5eead4 !important;
+    box-shadow: inset 3px 0 0 #5eead4;
+}}
+h1, h2, h3, h4, h5, h6, p, label, [data-testid="stCaptionContainer"] {{
+    color: #f4f7fb !important;
+}}
+.stCaption, [data-testid="stMarkdownContainer"] p {{ color: #9fb3c8 !important; }}
+hr {{ border-color: #243b53 !important; opacity: 0.7; }}
+[data-testid="stMetric"] {{
+    background: #111c2e !important;
+    border: 1px solid #243b53 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.18) !important;
+}}
+[data-testid="stMetricLabel"] {{ color: #9fb3c8 !important; }}
+[data-testid="stMetricValue"] {{ color: #f4f7fb !important; }}
+[data-testid="stDataFrame"] {{
+    background: #111c2e !important;
+    border: 1px solid #243b53 !important;
+    border-radius: 14px !important;
+}}
+[data-testid="stDataFrame"] * {{ color: #d9e2ec !important; }}
+[data-testid="stExpander"] {{
+    background: #111c2e !important;
+    border: 1px solid #243b53 !important;
+    border-radius: 14px !important;
+}}
+[data-testid="stExpander"] summary {{ color: #d9e2ec !important; }}
+[data-testid="stTabs"] [role="tablist"] {{ border-bottom-color: #243b53 !important; }}
+[data-testid="stTabs"] [role="tab"] {{ color: #9fb3c8 !important; }}
+[data-testid="stTabs"] [aria-selected="true"] {{ color: #5eead4 !important; }}
+[data-testid="stTextInput"] input, [data-testid="stSelectbox"] div, [data-testid="stDateInput"] input {{
+    background: #111c2e !important;
+    border-color: #243b53 !important;
+    color: #f4f7fb !important;
+}}
+[data-testid="stTextInput"] input::placeholder {{ color: #71869c !important; }}
+[data-testid="stButton"] button {{
+    background: #16263b !important;
+    border: 1px solid #334e68 !important;
+    border-radius: 10px !important;
+    color: #d9e2ec !important;
+}}
+[data-testid="stButton"] button:hover {{
+    background: #1d3b4d !important;
+    border-color: #5eead4 !important;
+    color: #5eead4 !important;
+}}
+[data-testid="stButton"] button[kind="primary"] {{
+    background: #0f766e !important;
+    border-color: #0f766e !important;
+    color: #f0fdfa !important;
+}}
+[data-testid="stButton"] button[kind="primary"]:hover {{
+    background: #14b8a6 !important;
+    border-color: #5eead4 !important;
+}}
+[data-testid="stAlert"] {{ border-radius: 14px !important; }}
+.fg-topbar {{
+    background: rgba(17,28,46,0.94) !important;
+    border: 1px solid #243b53 !important;
+    box-shadow: 0 14px 34px rgba(0,0,0,0.22) !important;
+}}
+.fg-brand, .fg-brand-mark {{ color: #f4f7fb !important; }}
+.fg-brand-mark {{ color: #5eead4 !important; }}
+.fg-topbar-meta {{ color: #9fb3c8 !important; }}
+.fg-stat-card, .fg-panel {{
+    background: #111c2e !important;
+    border-color: #243b53 !important;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.18) !important;
+}}
+.fg-stat-card.fg-attention {{ background: #2a2415 !important; border-color: #8a651c !important; }}
+.fg-stat-card.fg-urgent {{ background: #321b28 !important; border-color: #9f405a !important; }}
+.fg-stat-card.fg-healthy {{ background: #102a2e !important; border-color: #1c6b69 !important; }}
+.fg-stat-label, .fg-stat-note, .fg-page-subtitle, .fg-subtle, .fg-panel-copy, .fg-queue-meta, .fg-health-label {{
+    color: #9fb3c8 !important;
+}}
+.fg-stat-value, .fg-page-title, .fg-panel-title, .fg-queue-subject, .fg-health-value {{
+    color: #f4f7fb !important;
+}}
+.fg-eyebrow {{ color: #5eead4 !important; }}
+.fg-queue-row {{
+    background: #111c2e !important;
+    border-color: #243b53 !important;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+}}
+.fg-queue-row:hover {{ background: #16263b !important; border-color: #5eead4 !important; }}
+.fg-queue-subject {{ color: #f4f7fb !important; }}
+.fg-privacy-banner {{
+    background: #102a2e !important;
+    border-color: #1c6b69 !important;
+    color: #9ff5e8 !important;
+}}
+.fg-panel-dark {{ background: #081421 !important; border-color: #243b53 !important; }}
+.fg-badge-green {{ background: #123b36 !important; color: #6ee7b7 !important; }}
+.fg-badge-amber {{ background: #3a2c12 !important; color: #fcd34d !important; }}
+.fg-badge-red {{ background: #3b1d2a !important; color: #fda4af !important; }}
+.fg-badge-blue {{ background: #123252 !important; color: #7dd3fc !important; }}
+.fg-badge-gray {{ background: #1e3045 !important; color: #b8c7d9 !important; }}
+.fg-health-row {{ border-color: #243b53 !important; }}
+.fg-health-label {{ color: #9fb3c8 !important; }}
+.fg-health-value {{ color: #f4f7fb !important; }}
+[data-testid="stAlert"] {{ background: #16263b !important; border: 1px solid #334e68 !important; color: #d9e2ec !important; }}
+[data-testid="stStatusWidget"] {{ background: #111c2e !important; border-color: #243b53 !important; color: #d9e2ec !important; }}
+[data-testid="stStatusWidget"] summary {{ color: #d9e2ec !important; }}
+.stToast {{ background: #16263b !important; border: 1px solid #334e68 !important; color: #f4f7fb !important; }}
+.stDownloadButton {{ background: #16263b !important; }}
 </style>
 """
 
@@ -93,20 +472,20 @@ code, [data-testid="stToolbarButton"] {{
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def get_auth_config():
-    import yaml
     try:
-        with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f)
+        config = load_config()
         return config.get("auth", {"enabled": False, "users": []})
     except Exception:
         return {"enabled": False, "users": []}
 
 
 def _auth_secret() -> str:
-    import yaml
+    import os
+    env_secret = os.getenv("FALLGUARD_AUTH_SECRET")
+    if env_secret:
+        return env_secret
     try:
-        with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f)
+        config = load_config()
         return config.get("auth", {}).get("jwt_secret") or config.get("auth", {}).get("secret_key", "fallback-secret-key-change-me")
     except Exception:
         return "fallback-secret-key-change-me"
@@ -148,23 +527,38 @@ def validate_token(token: str, secret: str) -> Optional[dict]:
         if not hmac.compare_digest(sig, expected):
             return None
         username, role, ts = payload.split(":", 2)
-        if time.time() - int(ts) > 86400:
-            return None
         auth_config = get_auth_config()
+        expiry_hours = float(auth_config.get("token_expiry_hours", 24) or 24)
+        if time.time() - int(ts) > expiry_hours * 3600:
+            return None
         for u in auth_config.get("users", []):
             if u.get("username") == username:
-                return {"username": username, "role": role, "display_name": u.get("display_name", username)}
+                return {
+                    "username": username,
+                    "role": u.get("role", role),
+                    "display_name": u.get("display_name", username),
+                    "assigned_subjects": u.get("assigned_subjects", []),
+                }
         return {"username": username, "role": role, "display_name": username}
     except Exception:
         return None
 
 
+def _query_token_enabled() -> bool:
+    import os
+    return os.getenv("FALLGUARD_ALLOW_QUERY_TOKEN", "false").lower() == "true"
+
+
 def get_current_user() -> Optional[dict]:
     auth_config = get_auth_config()
     if not auth_config.get("enabled", False):
+        import os
+        if os.getenv("FALLGUARD_ENV", "development").lower() == "production":
+            logger.error("Authentication is disabled in production; refusing guest access")
+            return None
         return {"username": "guest", "role": "admin", "display_name": "Guest User"}
     token = st.session_state.get("auth_token")
-    if not token:
+    if not token and _query_token_enabled():
         token = st.query_params.get("auth_token")
         if isinstance(token, list):
             token = token[0] if token else None
@@ -192,24 +586,29 @@ def get_user_permissions(user: dict) -> dict:
 def filter_by_role(df: pd.DataFrame, user: dict) -> pd.DataFrame:
     if user.get("role") == "admin" or get_user_permissions(user).get("can_view_all"):
         return df
-    import yaml
-    try:
-        with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f)
-        allowed = set(config.get("auth", {}).get("role_permissions", {}).get(user.get("role", ""), ["S1", "S2", "S3"]))
-    except Exception:
-        allowed = {"S1", "S2", "S3"}
-    return df[df["subject_id"].isin(allowed)]
+    if "assigned_subjects" in user:
+        allowed = {str(subject) for subject in user.get("assigned_subjects", [])}
+    else:
+        try:
+            config = load_config()
+            permissions = config.get("auth", {}).get("role_permissions", {})
+            allowed = {
+                str(subject)
+                for subject in permissions.get(user.get("role", ""), ["S1", "S2", "S3"])
+            }
+        except Exception:
+            allowed = {"S1", "S2", "S3"}
+    if "subject_id" not in df.columns:
+        return df.iloc[0:0].copy()
+    return df[df["subject_id"].astype(str).isin(allowed)]
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # CONFIG + DATA
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def get_dashboard_config() -> dict:
-    import yaml
     try:
-        with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f)
+        config = load_config()
         return config.get("dashboard", {})
     except Exception:
         return {}
@@ -217,10 +616,8 @@ def get_dashboard_config() -> dict:
 
 def _escalation_config() -> dict:
     """Read the escalation section of config.yaml."""
-    import yaml
     try:
-        with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f)
+        config = load_config()
         return config.get("escalation", {})
     except Exception:
         return {}
@@ -228,62 +625,77 @@ def _escalation_config() -> dict:
 
 def _auto_escalate_stale(alerts_df: pd.DataFrame, max_age_sec: float,
                          notify: bool = False) -> int:
-    """Escalate pending alerts older than the threshold; optionally re-email.
-
-    Returns the number of alerts escalated (0 if disabled or none stale).
-    """
+    """Escalate pending alerts older than the threshold; optionally re-email."""
     from alert import AlertManager
-    stale_ts = []
     if max_age_sec <= 0 or alerts_df is None or len(alerts_df) == 0:
         return 0
     now = pd.to_datetime(time.time(), unit="s")
     pending = alerts_df[(alerts_df["status"] == "pending") & alerts_df["datetime"].notna()]
+    stale_rows = []
     for _, row in pending.iterrows():
         age = (now - row["datetime"]).total_seconds()
-        if age > max_age_sec:
-            stale_ts.append(row["timestamp"])
-    if not stale_ts:
+        if age > max_age_sec and row.get("id"):
+            stale_rows.append(row)
+    if not stale_rows:
         return 0
-    updated = AlertManager.bulk_update_alerts(ALERT_LOG, stale_ts, "system", "system", "escalated")
-    if notify and updated:
-        manager = AlertManager()
-        for ts in updated:
-            manager.send_escalation_email(ALERT_LOG, ts)
-    return len(updated)
+    manager = AlertManager()
+    ids = [str(row["id"]) for row in stale_rows]
+    updated_ids = manager.bulk_update_alert_ids(ids, "system", "system", "escalated")
+    if notify:
+        for alert_id in updated_ids:
+            record = manager.store.get(alert_id) or {}
+            try:
+                manager.send_escalation_email(ALERT_LOG, float(record.get("timestamp", 0)))
+            except (TypeError, ValueError):
+                continue
+    return len(updated_ids)
 
 
-def _escalate_alerts(timestamps: list, user: dict, notify: bool = True) -> int:
-    """Set alert(s) to escalated and re-notify the caregiver via email."""
+def _escalate_alerts(timestamps: list, user: dict, notify: bool = True,
+                     alert_ids: list[str] | None = None) -> int:
+    """Set alert(s) to escalated and optionally send follow-up email."""
     from alert import AlertManager
     username = user.get("username", "unknown")
     role = user.get("role", "viewer")
-    updated = AlertManager.bulk_update_alerts(ALERT_LOG, timestamps, username, role, "escalated")
-    if notify and updated:
-        manager = AlertManager()
-        for ts in updated:
-            manager.send_escalation_email(ALERT_LOG, ts)
-    return len(updated)
+    manager = AlertManager()
+    if alert_ids:
+        updated_ids = manager.bulk_update_alert_ids(
+            alert_ids, username, role, "escalated"
+        )
+        if not notify:
+            return len(updated_ids)
+        updated_timestamps: list[float] = []
+        for alert_id in updated_ids:
+            record = manager.store.get(alert_id) or {}
+            try:
+                updated_timestamps.append(float(record.get("timestamp", 0)))
+            except (TypeError, ValueError):
+                continue
+    else:
+        updated_timestamps = AlertManager.bulk_update_alerts(
+            ALERT_LOG, timestamps, username, role, "escalated"
+        )
+    if notify:
+        for timestamp in updated_timestamps:
+            manager.send_escalation_email(ALERT_LOG, timestamp)
+    return len(updated_timestamps)
 
 
 def load_alert_history(log_path: Path) -> pd.DataFrame:
-    records = []
-    empty_cols = ["datetime", "timestamp", "subject_id", "clip_id", "confidence", "tier", "outcome", "response_time", "status", "acknowledged_by", "acknowledged_at", "video_clip_path"]
-    if not log_path.exists():
-        return pd.DataFrame(columns=empty_cols)
-    with open(log_path, "r") as f:
-        for line in f:
-            line = line.strip()
-            if not line:
-                continue
-            try:
-                records.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
+    """Load and normalize alert records for display.
+
+    AlertStore supplies stable IDs for legacy records and handles malformed
+    lines consistently across dashboard and background workers.
+    """
+    empty_cols = [
+        "id", "datetime", "timestamp", "subject_id", "clip_id", "confidence",
+        "tier", "outcome", "response_time", "status", "delivery_status",
+        "acknowledged_by", "acknowledged_at", "video_clip_path",
+    ]
+    records = AlertStore(log_path).read_all()
     if not records:
         return pd.DataFrame(columns=empty_cols)
     df = pd.DataFrame(records)
-    # Map alert-log field names to dashboard-expected names so real values
-    # (confidence, tier, subject) surface instead of defaults.
     rename_map = {
         "fall_event_subject": "subject_id",
         "fall_event_clip": "clip_id",
@@ -297,11 +709,19 @@ def load_alert_history(log_path: Path) -> pd.DataFrame:
         df["datetime"] = pd.to_datetime(df["timestamp"], unit="s", errors="coerce")
     else:
         df["datetime"] = pd.NaT
-    defaults = {"subject_id": "unknown", "clip_id": "N/A", "confidence": 0.0, "tier": "low", "outcome": "unknown", "response_time": None, "status": "pending", "acknowledged_by": None, "acknowledged_at": None, "video_clip_path": None}
+    defaults = {
+        "id": "", "subject_id": "unknown", "clip_id": "N/A", "confidence": 0.0,
+        "tier": "low", "outcome": "unknown", "response_time": None,
+        "status": "pending", "delivery_status": "unknown", "acknowledged_by": None,
+        "acknowledged_at": None, "video_clip_path": None,
+    }
     for col, default in defaults.items():
         if col not in df.columns:
             df[col] = default
-        df[col] = df[col].fillna(default) if default is not None else df[col]
+        if default is not None:
+            df[col] = df[col].fillna(default)
+    df["confidence"] = pd.to_numeric(df["confidence"], errors="coerce").fillna(0.0)
+    df["acknowledged_at"] = pd.to_numeric(df["acknowledged_at"], errors="coerce")
     df = df.sort_values("datetime", ascending=False, na_position="last").reset_index(drop=True)
     return df
 
@@ -311,29 +731,33 @@ def get_system_status() -> dict:
 
     No hardcoded values: camera/model/uptime come from the actual system.
     """
-    import yaml
     try:
-        with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f)
+        config = load_config()
     except Exception:
         config = {}
 
     alerts_df = load_alert_history(ALERT_LOG)
-    total = len(alerts_df)
+    today = pd.Timestamp.now().normalize()
+    if "datetime" in alerts_df.columns:
+        today_count = int((alerts_df["datetime"] >= today).sum())
+    else:
+        today_count = 0
     pending = len(alerts_df[alerts_df["status"] == "pending"]) if "status" in alerts_df.columns else 0
     acknowledged = len(alerts_df[alerts_df["status"] == "acknowledged"]) if "status" in alerts_df.columns else 0
     escalated = len(alerts_df[alerts_df["status"] == "escalated"]) if "status" in alerts_df.columns else 0
-    false_alarms = len(alerts_df[alerts_df["outcome"] == "cancelled"]) if "outcome" in alerts_df.columns else 0
+    cancelled = len(alerts_df[alerts_df["outcome"] == "cancelled"]) if "outcome" in alerts_df.columns else 0
 
     # ─── Camera / uptime: prefer the live stream server, fall back to config ───
     cam_ok = False
     cam_available = False
     uptime_sec = 0.0
+    source_type = "unknown"
     live = {}
     base_url = _stream_base_url(_stream_server_config()) if _is_stream_server_running() else None
     if base_url:
         live = _fetch_stream_metrics(base_url) or {}
         cam_available = bool(live.get("camera_available", False))
+        source_type = str(live.get("source_type", "unknown"))
         cam_ok = cam_available
         uptime_sec = float(live.get("uptime_sec", 0) or 0)
 
@@ -359,14 +783,15 @@ def get_system_status() -> dict:
     return {
         "camera_online": cam_ok,
         "camera_available": cam_available,
+        "camera_source_type": source_type,
         "model_loaded": model_loaded,
         "last_check_in": now,
         "uptime_hours": uptime_sec / 3600.0 if uptime_sec > 0 else 0.0,
-        "total_alerts_today": total,
+        "total_alerts_today": today_count,
         "total_pending": pending,
         "total_acknowledged": acknowledged,
         "total_escalated": escalated,
-        "false_alarms_prevented": false_alarms,
+        "cancelled_during_grace": cancelled,
         "grace_period_enabled": grace_ok,
         "email_enabled": email_configured,
         "sms_enabled": sms_on,
@@ -391,7 +816,7 @@ def _app() -> dict:
 
 
 def render_login_page():
-    st.markdown(LIGHT_CSS, unsafe_allow_html=True)
+    st.markdown(THEME_CSS, unsafe_allow_html=True)
     st.markdown('<div style="height:6rem;"></div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
@@ -400,7 +825,7 @@ def render_login_page():
         with st.form("login_form", clear_on_submit=False):
             username = st.text_input("Username", placeholder="Enter your username")
             password = st.text_input("Password", type="password", placeholder="Enter your password")
-            submitted = st.form_submit_button("Sign in", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("Sign in", width="stretch", type="primary")
 
         if submitted:
             if username and password:
@@ -412,21 +837,34 @@ def render_login_page():
                         "username": found["username"],
                         "role": found.get("role", "viewer"),
                         "display_name": found.get("display_name", found["username"]),
+                        "assigned_subjects": found.get("assigned_subjects", []),
                     }
-                    # Persist the token in the URL so a page refresh does not log
-                    # the user out (Streamlit clears session state on re-connect).
-                    st.query_params["auth_token"] = token
+                    # Query-string tokens are opt-in for development only;
+                    # production deployments should use a server-side session.
+                    if _query_token_enabled():
+                        st.query_params["auth_token"] = token
                     st.rerun()
                 else:
                     st.error("Invalid username or password")
             else:
                 st.error("Please enter both username and password")
-        st.caption("Demo accounts — admin / admin123, caregiver / care123")
+        if __import__("os").environ.get("FALLGUARD_SHOW_DEMO_ACCOUNTS", "false").lower() == "true":
+            st.caption("Demo accounts — admin / admin123, caregiver / care123")
 
 
 def render_sidebar_brand():
-    st.markdown("### \U0001f6e1\ufe0f FallGuard AI")
-    st.caption("Elderly Care System")
+    st.markdown(
+        """
+        <div style="padding:0.35rem 0.2rem 0.8rem 0.2rem;">
+          <div style="align-items:center;color:#102a43;display:flex;font-size:1.05rem;font-weight:800;gap:0.55rem;">
+            <span class="fg-brand-mark" style="align-items:center;background:#0b1220;border-radius:10px;color:#5eead4;display:inline-flex;height:30px;justify-content:center;width:30px;">✦</span>
+            FallGuard
+          </div>
+          <div style="color:#5eead4;font-size:0.7rem;font-weight:700;letter-spacing:0.12em;margin:0.45rem 0 0 2.45rem;text-transform:uppercase;">Midnight operations</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_sidebar_user(user: dict):
@@ -435,7 +873,7 @@ def render_sidebar_user(user: dict):
     st.divider()
     st.markdown(f"**{display_name}**")
     st.caption(role)
-    if st.button("Log out", key="logout_btn", use_container_width=True):
+    if st.button("Log out", key="logout_btn", width="stretch"):
         st.session_state.pop("auth_token", None)
         st.session_state.pop("auth_user", None)
         if "auth_token" in st.query_params:
@@ -444,9 +882,62 @@ def render_sidebar_user(user: dict):
 
 
 def _page_header(icon: str, title: str, subtitle: str):
-    st.title(f"{icon} {title}")
-    st.caption(subtitle)
-    st.divider()
+    st.markdown(
+        f"""
+        <div class="fg-eyebrow">FALLGUARD / MIDNIGHT OPS</div>
+        <div class="fg-page-title">{html.escape(icon)} {html.escape(title)}</div>
+        <div class="fg-page-subtitle">{html.escape(subtitle)}</div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _status_badge(label: str, tone: str = "gray") -> str:
+    return f'<span class="fg-badge fg-badge-{tone}">{html.escape(str(label))}</span>'
+
+
+def _render_product_topbar(page_title: str, user: dict, status: dict | None = None):
+    status = status or {}
+    feed_ok = bool(status.get("camera_online"))
+    model_ok = bool(status.get("model_loaded"))
+    dot_color = "#16a34a" if feed_ok and model_ok else "#d97706"
+    feed_label = "Local feed ready" if feed_ok else "Feed needs attention"
+    role = html.escape(str(user.get("role", "viewer")).upper())
+    st.markdown(
+        f"""
+        <div class="fg-topbar">
+          <div class="fg-brand"><span class="fg-brand-mark">✦</span> FallGuard <span style="color:#9fb3c8;font-weight:600">/ Midnight operations</span></div>
+          <div class="fg-topbar-meta"><span class="fg-status-dot" style="background:{dot_color}"></span>{html.escape(feed_label)} · {role} · LOCAL SECURE</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_stat_strip(items: list[tuple[str, str, str, str]]):
+    cards = []
+    for label, value, note, tone in items:
+        cards.append(
+            f'<div class="fg-stat-card fg-{tone}"><div class="fg-stat-label">{html.escape(label)}</div>'
+            f'<div class="fg-stat-value">{html.escape(value)}</div>'
+            f'<div class="fg-stat-note">{html.escape(note)}</div></div>'
+        )
+    st.markdown(f'<div class="fg-status-strip">{"".join(cards)}</div>', unsafe_allow_html=True)
+
+
+def _render_privacy_banner(text: str = "LOCAL SECURE · Raw frames stay on this device. Notifications contain alert metadata only; recording remains opt-in and local."):
+    st.markdown(
+        f'<div class="fg-privacy-banner"><span>●</span><span>{html.escape(text)}</span></div>',
+        unsafe_allow_html=True,
+    )
+
+
+def _render_health_row(label: str, value: str, tone: str = "gray"):
+    badge = _status_badge(value, tone)
+    st.markdown(
+        f'<div class="fg-health-row"><span class="fg-health-label">{html.escape(label)}</span><span class="fg-health-value">{badge}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 
 def show_toast(message: str, icon: str = "\u2705"):
@@ -454,14 +945,15 @@ def show_toast(message: str, icon: str = "\u2705"):
 
 
 def _render_toolbar(current_page_title: str, user: dict):
+    _render_product_topbar(current_page_title, user, _app().get("status", {}))
     if current_page_title == "Live Monitor":
         return
     c1, c2 = st.columns([5, 1])
     with c1:
-        st.caption("Alerts auto-refresh every 30s \u00b7 Live Monitor preview updates continuously.")
+        st.caption("Alerts auto-refresh every 30s · Live Monitor preview updates continuously.")
     with c2:
         if get_user_permissions(user).get("can_export"):
-            if st.button("\U0001f4e5 Export CSV", key="export_btn", use_container_width=True):
+            if st.button("Export CSV", key="export_btn", width="stretch"):
                 st.session_state["do_export"] = True
 
 
@@ -470,8 +962,8 @@ def _maybe_render_export():
         return
     alerts_df = _app().get("alerts_df")
     if alerts_df is not None and len(alerts_df) > 0:
-        export_df = alerts_df[["datetime", "subject_id", "clip_id", "confidence", "tier", "outcome", "response_time", "status", "acknowledged_by"]].copy()
-        export_df.columns = ["Time", "Subject ID", "Clip ID", "Confidence", "Tier", "Outcome", "Response Time", "Status", "Acknowledged By"]
+        export_df = alerts_df[["id", "datetime", "subject_id", "clip_id", "confidence", "tier", "outcome", "response_time", "status", "delivery_status", "acknowledged_by"]].copy()
+        export_df.columns = ["Alert ID", "Time", "Subject ID", "Clip ID", "Confidence", "Tier", "Outcome", "Response Time", "Status", "Delivery", "Acknowledged By"]
         export_df["Time"] = export_df["Time"].dt.strftime("%Y-%m-%d %H:%M:%S")
         csv = export_df.to_csv(index=False)
         st.download_button("\U0001f4e5 Download CSV", csv, "alerts_export.csv", "text/csv")
@@ -482,7 +974,38 @@ def _maybe_render_export():
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _TIER_COLOR = {"high": "red", "medium": "orange", "low": "green"}
-_STATUS_COLOR = {"pending": "orange", "acknowledged": "green", "escalated": "red", "dismissed": "gray"}
+_STATUS_COLOR = {"pending": "orange", "acknowledged": "green", "escalated": "red", "dismissed": "gray", "cancelled": "gray"}
+
+
+def _cancel_live_alert(alert_id: str | None) -> None:
+    """Signal a live grace worker when a dashboard action is taken."""
+    if not alert_id:
+        return
+    try:
+        from live_detection import cancel_active_alert
+        cancel_active_alert(str(alert_id))
+    except Exception as exc:
+        logger.debug("No active live grace worker for %s: %s", alert_id, exc)
+
+
+def _safe_recording_path(value: str | None) -> Path | None:
+    if not value:
+        return None
+    try:
+        config = load_config()
+        root = resolve_path(
+            config.get("recording", {}).get("path", "data/recordings"),
+            base=PROJECT_ROOT,
+        )
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = PROJECT_ROOT / candidate
+        candidate = candidate.resolve()
+        if root and root in candidate.parents and candidate.suffix.lower() == ".mp4":
+            return candidate
+    except (OSError, ValueError):
+        pass
+    return None
 
 
 def render_alert_detail(alert_data: dict, user: dict, key_prefix: str = "", expanded: bool = False):
@@ -510,13 +1033,14 @@ def render_alert_detail(alert_data: dict, user: dict, key_prefix: str = "", expa
             st.badge(tier, color=_TIER_COLOR.get(tier, "gray"))
         with b2:
             st.badge(status_val, color=_STATUS_COLOR.get(status_val, "gray"))
+        st.caption(f"Delivery: {alert_data.get('delivery_status', 'unknown')}")
         st.divider()
 
-        video_path = alert_data.get("video_clip_path")
-        if video_path and Path(video_path).exists():
-            st.markdown("**Video clip**")
+        video_path = _safe_recording_path(alert_data.get("video_clip_path"))
+        if video_path and video_path.exists():
+            st.markdown("**Local video clip**")
             st.video(str(video_path))
-            with open(video_path, "rb") as vf:
+            with video_path.open("rb") as vf:
                 st.download_button(
                     "\U0001f4e5 Download clip", data=vf.read(),
                     file_name=f"{subject}_{clip}.mp4", mime="video/mp4",
@@ -531,31 +1055,205 @@ def render_alert_detail(alert_data: dict, user: dict, key_prefix: str = "", expa
                 st.caption(f"Acknowledged by {ack_by} at {ack_at_str}")
             cols = st.columns(3)
             with cols[0]:
-                if permissions.get("can_acknowledge") and st.button("\u2705 Acknowledge", key=f"ack_{key_prefix}", use_container_width=True, type="primary"):
+                if permissions.get("can_acknowledge") and st.button("\u2705 Acknowledge", key=f"ack_{key_prefix}", width="stretch", type="primary"):
                     from alert import AlertManager
                     user_info = st.session_state.get("auth_user", {})
-                    AlertManager.acknowledge_alert(ALERT_LOG, alert_data.get("timestamp", 0), user_info.get("username", "unknown"), user_info.get("role", "viewer"), "acknowledged")
+                    AlertManager.acknowledge_alert(
+                        ALERT_LOG, alert_data.get("timestamp", 0),
+                        user_info.get("username", "unknown"),
+                        user_info.get("role", "viewer"), "acknowledged",
+                        alert_id=alert_data.get("id"),
+                    )
+                    _cancel_live_alert(alert_data.get("id"))
                     show_toast(f"Alert for {subject} acknowledged", "\u2705")
                     time.sleep(0.3)
                     st.rerun()
             with cols[1]:
-                if permissions.get("can_dismiss") and st.button("\u274c Dismiss", key=f"dismiss_{key_prefix}", use_container_width=True):
+                if permissions.get("can_dismiss") and st.button("\u274c Dismiss", key=f"dismiss_{key_prefix}", width="stretch"):
                     from alert import AlertManager
                     user_info = st.session_state.get("auth_user", {})
-                    AlertManager.acknowledge_alert(ALERT_LOG, alert_data.get("timestamp", 0), user_info.get("username", "unknown"), user_info.get("role", "viewer"), "dismissed")
+                    AlertManager.acknowledge_alert(
+                        ALERT_LOG, alert_data.get("timestamp", 0),
+                        user_info.get("username", "unknown"),
+                        user_info.get("role", "viewer"), "dismissed",
+                        alert_id=alert_data.get("id"),
+                    )
+                    _cancel_live_alert(alert_data.get("id"))
                     show_toast(f"Alert for {subject} dismissed", "\u274c")
                     time.sleep(0.3)
                     st.rerun()
             with cols[2]:
-                if permissions.get("can_escalate") and st.button("\U0001f6a8 Escalate", key=f"esc_{key_prefix}", use_container_width=True):
+                if permissions.get("can_escalate") and st.button("\U0001f6a8 Escalate", key=f"esc_{key_prefix}", width="stretch"):
                     user_info = st.session_state.get("auth_user", {})
-                    _escalate_alerts([alert_data.get("timestamp", 0)], user_info,
-                                     notify=_escalation_config().get("notify_on_escalate", True))
+                    _escalate_alerts(
+                        [alert_data.get("timestamp", 0)], user_info,
+                        notify=_escalation_config().get("notify_on_escalate", True),
+                        alert_ids=[str(alert_data.get("id"))] if alert_data.get("id") else None,
+                    )
+                    _cancel_live_alert(alert_data.get("id"))
                     show_toast(f"Alert for {subject} escalated!", "\U0001f6a8")
                     time.sleep(0.3)
                     st.rerun()
         else:
             st.info(f"This alert has already been {status_val}.")
+
+
+def _alert_tone(tier: str) -> str:
+    return {"high": "red", "medium": "amber", "low": "green"}.get(str(tier).lower(), "gray")
+
+
+def _status_tone(status: str) -> str:
+    return {
+        "pending": "amber",
+        "acknowledged": "green",
+        "escalated": "red",
+        "dismissed": "gray",
+        "cancelled": "gray",
+    }.get(str(status).lower(), "gray")
+
+
+def _relative_age(timestamp: float) -> str:
+    try:
+        age = max(0, time.time() - float(timestamp))
+    except (TypeError, ValueError):
+        return "time unknown"
+    if age < 60:
+        return f"{int(age)}s ago"
+    if age < 3600:
+        return f"{int(age // 60)}m ago"
+    if age < 86400:
+        return f"{int(age // 3600)}h ago"
+    return f"{int(age // 86400)}d ago"
+
+
+def _apply_alert_action(row: dict, action: str, user: dict, key: str):
+    """Apply one alert action and keep the live grace worker in sync."""
+    from alert import AlertManager
+
+    alert_id = row.get("id")
+    timestamp = row.get("timestamp", 0)
+    username = user.get("username", "unknown")
+    role = user.get("role", "viewer")
+    if action in {"acknowledged", "dismissed"}:
+        AlertManager.acknowledge_alert(
+            ALERT_LOG, timestamp, username, role, action, alert_id=alert_id
+        )
+        label = "Acknowledged" if action == "acknowledged" else "Dismissed"
+        st.toast(f"Alert {label.lower()}", icon="✓" if action == "acknowledged" else "×")
+    elif action == "escalated":
+        _escalate_alerts(
+            [timestamp], user,
+            notify=_escalation_config().get("notify_on_escalate", True),
+            alert_ids=[str(alert_id)] if alert_id else None,
+        )
+        st.toast("Alert escalated", icon="🚨")
+    _cancel_live_alert(alert_id)
+
+
+def _render_alert_card(row: dict, user: dict, key: str, show_actions: bool = True):
+    subject = str(row.get("subject_id", "unknown"))
+    tier = str(row.get("tier", "low"))
+    status = str(row.get("status", "pending"))
+    confidence = float(row.get("confidence", 0) or 0)
+    age = _relative_age(row.get("timestamp", 0))
+    with st.container(border=True):
+        left, right = st.columns([4, 2])
+        with left:
+            st.markdown(
+                f'<div class="fg-queue-subject">{html.escape(subject)} <span style="color:#9fb3c8;font-weight:500">· {html.escape(str(row.get("clip_id", "N/A")))}</span></div>'
+                f'<div class="fg-queue-meta">{html.escape(age)} · {int(confidence * 100)}% confidence · {html.escape(str(row.get("outcome", "pending")))}</div>',
+                unsafe_allow_html=True,
+            )
+        with right:
+            st.markdown(
+                f'<div style="display:flex;gap:0.4rem;justify-content:flex-end;">{_status_badge(tier, _alert_tone(tier))}{_status_badge(status, _status_tone(status))}</div>',
+                unsafe_allow_html=True,
+            )
+        if show_actions and status == "pending":
+            permissions = get_user_permissions(user)
+            action_row = st.columns([1, 1, 1, 3])
+            if action_row[0].button("Acknowledge", key=f"{key}_ack", width="stretch", type="primary", disabled=not permissions.get("can_acknowledge")):
+                _apply_alert_action(row, "acknowledged", user, f"{key}_ack")
+                st.rerun()
+            if action_row[1].button("Dismiss", key=f"{key}_dismiss", width="stretch", disabled=not permissions.get("can_dismiss")):
+                _apply_alert_action(row, "dismissed", user, f"{key}_dismiss")
+                st.rerun()
+            if action_row[2].button("Escalate", key=f"{key}_escalate", width="stretch", disabled=not permissions.get("can_escalate")):
+                _apply_alert_action(row, "escalated", user, f"{key}_escalate")
+                st.rerun()
+        with st.expander("Event details", expanded=False):
+            render_alert_detail(row, user, key_prefix=f"{key}_detail", expanded=False)
+
+
+def render_overview_page():
+    """Caregiver-first command center for monitoring and unresolved work."""
+    data = _app()
+    alerts = data.get("alerts_df")
+    if alerts is None:
+        alerts = pd.DataFrame()
+    status = data.get("status", {})
+
+    _page_header("⌂", "Overview", "A calm, at-a-glance view of monitoring, alerts, and privacy.")
+
+    pending = alerts[alerts["status"] == "pending"] if len(alerts) else alerts
+    source_type = status.get("camera_source_type", "unknown")
+    source_label = (
+        "Demo preview" if source_type == "synthetic_preview"
+        else "Video file" if source_type == "video_file"
+        else "RTSP camera" if source_type == "rtsp"
+        else "Webcam" if source_type == "real_camera"
+        else "Feed offline"
+    )
+    monitoring_label = "Live" if status.get("camera_online") else "Standby"
+    pending_count = int(len(pending))
+    attention_tone = "urgent" if pending_count else "healthy"
+    attention_note = "Needs caregiver response" if pending_count else "No open actions"
+    _render_stat_strip([
+        ("Monitoring", monitoring_label, source_label, "healthy" if status.get("camera_online") else "attention"),
+        ("Needs attention", str(pending_count), attention_note, attention_tone),
+        ("Alerts today", str(status.get("total_alerts_today", 0)), "Recorded events", "healthy" if not status.get("total_alerts_today", 0) else "attention"),
+        ("Model state", "Ready" if status.get("model_loaded") else "Unavailable", "Random Forest baseline", "healthy" if status.get("model_loaded") else "urgent"),
+    ])
+
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        st.markdown('<div class="fg-kicker-row"><div class="fg-panel-title">Needs attention</div><div class="fg-subtle">Priority queue</div></div>', unsafe_allow_html=True)
+        if len(pending) == 0:
+            st.markdown(
+                '<div class="fg-panel" style="background:#f5fffc;border-color:#b7e5dc;"><div class="fg-panel-title" style="color:#087f5b;">All clear</div><div class="fg-panel-copy">No pending caregiver actions. Monitoring can continue in the background.</div></div>',
+                unsafe_allow_html=True,
+            )
+        else:
+            for index, (_, row) in enumerate(pending.sort_values("datetime", ascending=True).head(3).iterrows()):
+                _render_alert_card(row.to_dict(), data.get("user", {}), f"overview_{index}")
+            if len(pending) > 3:
+                st.caption(f"+ {len(pending) - 3} more pending alert{'s' if len(pending) - 3 != 1 else ''} in the alert queue.")
+
+    with right:
+        st.markdown('<div class="fg-kicker-row"><div class="fg-panel-title">System health</div><div class="fg-subtle">Local runtime</div></div>', unsafe_allow_html=True)
+        with st.container(border=True):
+            _render_health_row("Camera", source_label, "green" if status.get("camera_online") else "amber")
+            _render_health_row("Model", "Ready" if status.get("model_loaded") else "Unavailable", "green" if status.get("model_loaded") else "red")
+            _render_health_row("Grace period", "Active" if status.get("grace_period_enabled") else "Disabled", "green" if status.get("grace_period_enabled") else "amber")
+            _render_health_row("Notifications", "Configured" if status.get("email_enabled") else "Not configured", "green" if status.get("email_enabled") else "amber")
+            _render_health_row("Recording", "Off / local only", "green")
+        st.markdown("<div style='height:0.7rem'></div>", unsafe_allow_html=True)
+        _render_privacy_banner()
+
+    st.markdown("<div style='height:1.45rem'></div>", unsafe_allow_html=True)
+    st.markdown('<div class="fg-kicker-row"><div class="fg-panel-title">Recent activity</div><div class="fg-subtle">Latest recorded events</div></div>', unsafe_allow_html=True)
+    if len(alerts) == 0:
+        st.markdown('<div class="fg-panel"><div class="fg-panel-copy">No alert history yet. Events will appear here as the detector creates them.</div></div>', unsafe_allow_html=True)
+    else:
+        recent = alerts.sort_values("datetime", ascending=False).head(6)
+        for index, (_, row) in enumerate(recent.iterrows()):
+            status_value = str(row.get("status", "pending"))
+            tier_value = str(row.get("tier", "low"))
+            st.markdown(
+                f'<div class="fg-queue-row"><div class="fg-queue-main"><div class="fg-queue-subject">{html.escape(str(row.get("subject_id", "unknown")))}</div><div class="fg-queue-meta">{html.escape(str(row.get("datetime", "Unknown time")))} · {int(float(row.get("confidence", 0) or 0) * 100)}% confidence</div></div><div class="fg-queue-right">{_status_badge(tier_value, _alert_tone(tier_value))}{_status_badge(status_value, _status_tone(status_value))}</div></div>',
+                unsafe_allow_html=True,
+            )
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # ALERTS PAGE
@@ -565,7 +1263,7 @@ def render_alerts_page():
     data = _app()
     user = data.get("user")
 
-    _page_header("\U0001f514", "Alert Management", "Monitor and respond to fall detection alerts.")
+    _page_header("\U0001f514", "Alert Queue", "Review, acknowledge, dismiss, or escalate caregiver events.")
 
     _render_alerts_body(user)
 
@@ -595,19 +1293,15 @@ def _render_alerts_body(user: dict):
 
     total = int(len(alerts_df))
     pending = int((alerts_df["status"] == "pending").sum())
-    acknowledged = int((alerts_df["status"] == "acknowledged").sum())
     escalated = int((alerts_df["status"] == "escalated").sum())
     high_risk = int((alerts_df["tier"] == "high").sum())
-    high_conf = int(alerts_df["confidence"].fillna(0).ge(0.85).sum())
 
-    m = st.columns(6)
-    m[0].metric("Total", total)
-    m[1].metric("Pending", pending)
-    m[2].metric("Acknowledged", acknowledged)
-    m[3].metric("Escalated", escalated)
-    m[4].metric("High-risk", high_risk)
-    m[5].metric("High-conf", high_conf)
-    st.divider()
+    _render_stat_strip([
+        ("All events", str(total), "Current view", "healthy"),
+        ("Pending", str(pending), "Needs response", "attention" if pending else "healthy"),
+        ("Escalated", str(escalated), "Urgent follow-up", "urgent" if escalated else "healthy"),
+        ("High tier", str(high_risk), "Model tier", "attention" if high_risk else "healthy"),
+    ])
 
     # ─── Filters (collapsed by default for a cleaner default view) ────────────
     with st.expander("\U0001f50d Filters", expanded=False):
@@ -618,8 +1312,8 @@ def _render_alerts_body(user: dict):
             tier_filter = st.pills("Tier", ["All", "high", "medium", "low"], default="All",
                                    key="alert_tier", label_visibility="collapsed", selection_mode="single")
         with c3:
-            status_filter = st.pills("Status", ["All", "pending", "acknowledged", "escalated", "dismissed"],
-                                     default="All", key="alert_status", label_visibility="collapsed", selection_mode="single")
+            status_filter = st.pills("Status", ["All", "pending", "acknowledged", "escalated", "dismissed", "cancelled"],
+                                     default="pending", key="alert_status", label_visibility="collapsed", selection_mode="single")
         with c4:
             sort_order = st.selectbox("Sort", ["Newest", "Oldest", "Confidence"], key="alert_sort", label_visibility="collapsed")
 
@@ -644,7 +1338,9 @@ def _render_alerts_body(user: dict):
     if start_date:
         filtered = filtered[filtered["datetime"].dt.normalize() >= pd.Timestamp(start_date)]
     if end_date:
-        filtered = filtered[filtered["datetime"].dt.normalize() <= pd.Timestamp(end_date)]
+        # Treat the end date as inclusive for the whole calendar day.
+        end_exclusive = pd.Timestamp(end_date) + pd.Timedelta(days=1)
+        filtered = filtered[filtered["datetime"] < end_exclusive]
 
     if len(filtered) == 0:
         st.warning("No alerts match the current filters.")
@@ -657,81 +1353,47 @@ def _render_alerts_body(user: dict):
     else:
         filtered = filtered.sort_values("datetime", ascending=False)
 
-    display_df = pd.DataFrame({
-        "Time": filtered["datetime"].dt.strftime("%m-%d %H:%M"),
-        "Subject": filtered["subject_id"].astype(str),
-        "Tier": filtered["tier"].str.upper(),
-        "Confidence": (filtered["confidence"].fillna(0) * 100).astype(int).astype(str) + "%",
-        "Status": filtered["status"].str.upper(),
-    })
-
-    st.caption("Select one or more rows to inspect and act. Use the table toolbar to search/filter.")
-
-    event = st.dataframe(
-        display_df,
-        hide_index=True,
-        use_container_width=True,
-        height=min(len(filtered) * 35 + 65, 500),
-        on_select="rerun",
-        selection_mode="multi-row",
+    st.markdown(
+        f'<div class="fg-kicker-row"><div class="fg-panel-title">Alert queue</div><div class="fg-subtle">{len(filtered)} event{"s" if len(filtered) != 1 else ""} in view · actions update the live event state</div></div>',
+        unsafe_allow_html=True,
     )
+    visible_rows = filtered.head(25)
+    if len(visible_rows) == 0:
+        st.markdown('<div class="fg-panel"><div class="fg-panel-copy">No alerts match the current filters.</div></div>', unsafe_allow_html=True)
+    for index, (_, row) in enumerate(visible_rows.iterrows()):
+        _render_alert_card(row.to_dict(), user, f"queue_{index}")
+    if len(filtered) > len(visible_rows):
+        st.caption(f"Showing the first {len(visible_rows)} events. Refine the filters to narrow the queue.")
 
-    selected_rows = event.selection.rows
-    permissions = get_user_permissions(user)
-    if len(selected_rows) > 0:
-        # Resolve selected rows back to the filtered dataframe.
-        sel_idx = filtered.iloc[selected_rows]
-        pending_ts = sorted(sel_idx.loc[sel_idx["status"] == "pending", "datetime"].tolist())
-        n_pending = len(pending_ts)
-        ts_list = sel_idx["datetime"].dt.timestamp().tolist()
-
-        st.divider()
-        st.caption(f"{len(selected_rows)} alert{'s' if len(selected_rows) != 1 else ''} selected \u00b7 {n_pending} actionable")
-        cols = st.columns([1, 1, 1, 3])
-        from alert import AlertManager
-        with cols[0]:
-            can_ack = permissions.get("can_acknowledge", False) and n_pending > 0
-            if st.button("\u2705 Acknowledge", key="bulk_ack", disabled=not can_ack, use_container_width=True):
-                AlertManager.bulk_update_alerts(ALERT_LOG, ts_list, user.get("username",""), user.get("role",""), "acknowledged")
-                st.toast("Selected alerts acknowledged", icon="\u2705")
-                time.sleep(0.3); st.rerun()
-        with cols[1]:
-            can_dismiss = permissions.get("can_dismiss", False) and n_pending > 0
-            if st.button("\u274c Dismiss", key="bulk_dismiss", disabled=not can_dismiss, use_container_width=True):
-                AlertManager.bulk_update_alerts(ALERT_LOG, ts_list, user.get("username",""), user.get("role",""), "dismissed")
-                st.toast("Selected alerts dismissed", icon="\u274c")
-                time.sleep(0.3); st.rerun()
-        with cols[2]:
-            can_esc = permissions.get("can_escalate", False) and n_pending > 0
-            if st.button("\U0001f6a8 Escalate", key="bulk_esc", disabled=not can_esc, use_container_width=True):
-                _escalate_alerts(ts_list, user, notify=_escalation_config().get("notify_on_escalate", True))
-                st.toast("Selected alerts escalated \u2014 follow-up urgent email sent", icon="\U0001f6a8")
-                time.sleep(0.3); st.rerun()
-
-    # Single-row detail (last-selected shows the inspector).
-    if len(selected_rows) == 1:
-        pos = selected_rows[0]
-        row = filtered.iloc[pos]
-        render_alert_detail(row.to_dict(), user, key_prefix=f"sel_{pos}", expanded=True)
+    with st.expander("Compact table view", expanded=False):
+        display_df = pd.DataFrame({
+            "Time": filtered["datetime"].dt.strftime("%m-%d %H:%M"),
+            "Subject": filtered["subject_id"].astype(str),
+            "Tier": filtered["tier"].astype(str).str.upper(),
+            "Confidence": (filtered["confidence"].fillna(0) * 100).astype(int).astype(str) + "%",
+            "Status": filtered["status"].astype(str).str.upper(),
+            "Delivery": filtered["delivery_status"].astype(str).str.upper(),
+        })
+        st.dataframe(display_df, hide_index=True, width="stretch")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # LIVE MONITOR PAGE
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def _stream_server_config() -> dict:
-    import yaml
     try:
-        with open("config.yaml", "r") as f:
-            cfg = yaml.safe_load(f)
+        cfg = load_config()
     except Exception:
         cfg = {}
     s = cfg.get("streaming", {})
     r = cfg.get("recording", {})
     cam = cfg.get("camera", {})
-    allow_remote = s.get("allow_remote", False)
+    allow_remote = bool(s.get("allow_remote", False))
+    if allow_remote:
+        logger.warning("streaming.allow_remote is ignored; use an authenticated reverse proxy")
     return {
         "enabled": s.get("enabled", True),
-        "host": "0.0.0.0" if allow_remote else s.get("host", "127.0.0.1"),
+        "host": s.get("host", "127.0.0.1") if not allow_remote else "127.0.0.1",
         "port": int(s.get("port", 8091)),
         "jpeg_quality": int(s.get("jpeg_quality", 80)),
         "max_fps": float(s.get("max_fps", 15)),
@@ -744,6 +1406,11 @@ def _stream_server_config() -> dict:
             "fps": float(cam.get("fps", 30)),
         },
         "use_synthetic": s.get("use_synthetic", False),
+        "recording_enabled": bool(r.get("enabled", False)),
+        "allowed_origins": s.get("allowed_origins", [
+            "http://localhost:8501", "http://127.0.0.1:8501",
+            "http://localhost:3000", "http://127.0.0.1:3000",
+        ]),
         "record_path": r.get("path", "data/recordings/"),
         "recording_max_days": int(r.get("max_days", 7)),
         "recording_segment_duration": r.get("segment_duration", 300),
@@ -774,11 +1441,23 @@ def _stream_base_url(cfg: dict = None) -> Optional[str]:
         return None
 
 
+def _stream_token() -> str:
+    try:
+        import stream_server as ss
+        return str(ss.get_stream_server().auth_token)
+    except Exception:
+        return ""
+
+
 def _fetch_stream_metrics(base_url: str) -> Optional[dict]:
     if not base_url:
         return None
     try:
-        with urllib.request.urlopen(f"{base_url}/metrics", timeout=3) as r:
+        request = urllib.request.Request(
+            f"{base_url}/metrics",
+            headers={"X-FallGuard-Token": _stream_token()},
+        )
+        with urllib.request.urlopen(request, timeout=3) as r:
             return json.loads(r.read().decode())
     except Exception:
         return None
@@ -788,7 +1467,11 @@ def _post_stream_action(base_url: str, action: str) -> Optional[dict]:
     if not base_url:
         return None
     try:
-        req = urllib.request.Request(f"{base_url}/record/{action}", method="POST")
+        req = urllib.request.Request(
+            f"{base_url}/record/{action}",
+            method="POST",
+            headers={"X-FallGuard-Token": _stream_token()},
+        )
         with urllib.request.urlopen(req, timeout=5) as r:
             return json.loads(r.read().decode())
     except Exception as e:
@@ -799,9 +1482,16 @@ def _post_stream_action(base_url: str, action: str) -> Optional[dict]:
 @st.fragment(run_every=1.0)
 def _render_live_metrics(status: dict, alerts_df: pd.DataFrame, base_url: str):
     live = _fetch_stream_metrics(base_url) or {}
-    fps = live.get("fps", 0.0)
-    rec_active = live.get("recording_active", False)
-    cam_ok = live.get("camera_available", False)
+    fps = float(live.get("fps", 0.0) or 0.0)
+    rec_active = bool(live.get("recording_active", False))
+    cam_ok = bool(live.get("camera_available", False))
+    source_type = str(live.get("source_type", "unknown"))
+    source_label = {
+        "synthetic_preview": "Demo preview",
+        "video_file": "Video file",
+        "rtsp": "RTSP camera",
+        "real_camera": "Webcam",
+    }.get(source_type, "Offline" if not cam_ok else "Camera")
 
     now = pd.to_datetime(time.time(), unit="s")
     today = now.normalize()
@@ -811,67 +1501,64 @@ def _render_live_metrics(status: dict, alerts_df: pd.DataFrame, base_url: str):
     else:
         last_hour_count = 0
         today_count = 0
-
     age = live.get("last_frame_age_sec")
-    age_str = f"{age:.1f}s" if age is not None else "n/a"
-
-    def _cam_label():
-        if cam_ok:
-            return "Live camera"
-        return "Simulated" if base_url else "Offline"
-
-    m = st.columns(4)
-    m[0].metric("Live FPS", f"{fps:.1f}")
-    m[1].metric("Falls / 1 hour", last_hour_count)
-    m[2].metric("Alerts today", today_count)
-    m[3].metric("Camera", _cam_label())
-    st.caption(f"Last frame {age_str} ago \u00b7 {'Recording' if rec_active else 'Not recording'}")
+    age_str = f"{float(age):.1f}s ago" if age is not None else "Waiting for frame"
+    _render_stat_strip([
+        ("Live feed", source_label, age_str, "healthy" if cam_ok else "attention"),
+        ("Stream rate", f"{fps:.1f} FPS", "Current capture rate", "healthy" if fps > 0 else "attention"),
+        ("Alerts / hour", str(last_hour_count), "Rolling one-hour view", "healthy" if not last_hour_count else "attention"),
+        ("Alerts today", str(today_count), "Recorded events", "healthy" if not today_count else "attention"),
+    ])
+    st.caption(f"Recording is {'active and local' if rec_active else 'off'} · remote video access is blocked by the local stream policy.")
 
 
 def _render_video_panel(base_url: str):
-    frame_url = f"{base_url}/frame?t=" if base_url else None
+    token = urllib.parse.quote(_stream_token(), safe="")
+    frame_url = f"{base_url}/frame?token={token}&t=" if base_url and token else None
     if not frame_url:
-        st.info("Stream server is offline. Enable `streaming.enabled` in config.yaml to preview the live feed.")
+        st.markdown(
+            '<div class="fg-panel-dark"><div class="fg-panel-title">Live feed unavailable</div><div class="fg-panel-copy" style="color:#b8c7d9;">Start the local stream server or enable streaming in config.yaml to view the camera feed.</div></div>',
+            unsafe_allow_html=True,
+        )
         return
 
-    html = f"""
-    <div style="position:relative;background:#0b1220;border:1px solid #e2e8f0;border-radius:12px;overflow:hidden;">
-        <img id="fg-live"
-             alt="Live camera feed"
-             style="display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#0b1220;" />
-        <div style="position:absolute;top:12px;left:12px;background:rgba(11,18,32,0.7);color:#5eead4;font-family:Menlo,Consolas,monospace;font-size:11px;letter-spacing:1px;padding:5px 10px;border-radius:100px;border:1px solid rgba(94,234,212,0.35);">
-            <span id="fg-dot" style="display:inline-block;width:7px;height:7px;border-radius:50%;background:#5eead4;margin-right:6px;"></span>
+    iframe_html = f"""
+    <div style="position:relative;background:#081421;border:1px solid #243b53;border-radius:18px;overflow:hidden;box-shadow:0 16px 40px rgba(8,20,33,0.22);">
+        <img id="fg-live" alt="Live camera feed" style="display:block;width:100%;aspect-ratio:16/9;object-fit:contain;background:#081421;" />
+        <div style="position:absolute;top:14px;left:14px;background:rgba(8,20,33,0.84);border:1px solid rgba(94,234,212,0.35);border-radius:999px;color:#5eead4;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;font-weight:800;letter-spacing:0.1em;padding:7px 11px;">
+            <span id="fg-dot" style="display:inline-block;width:8px;height:8px;border-radius:50%;background:#5eead4;margin-right:7px;"></span>
             <span id="fg-status">CONNECTING</span>
         </div>
+        <div style="position:absolute;right:14px;bottom:14px;background:rgba(8,20,33,0.72);border:1px solid rgba(184,199,217,0.2);border-radius:8px;color:#b8c7d9;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:10px;padding:6px 8px;">LOCAL / AUTHENTICATED</div>
     </div>
     <script>
     (function(){{
       var img = document.getElementById('fg-live');
-      var st  = document.getElementById('fg-status');
+      var status = document.getElementById('fg-status');
       var dot = document.getElementById('fg-dot');
       var base = '{frame_url}';
       var live = false;
       var lastOk = Date.now();
       function tick(){{ img.src = base + Date.now(); }}
       img.onload = function(){{
-        if(!live){{ live = true; st.textContent = 'LIVE'; st.style.color = '#5eead4'; dot.style.background = '#5eead4'; }}
+        if(!live){{ live = true; status.textContent = 'LIVE'; status.style.color = '#5eead4'; dot.style.background = '#5eead4'; }}
         lastOk = Date.now();
         setTimeout(tick, 200);
       }};
       img.onerror = function(){{
-        if(live){{ live = false; st.textContent = 'RECONNECTING'; st.style.color = '#fbbf24'; dot.style.background = '#fbbf24'; }}
+        if(live){{ live = false; status.textContent = 'RECONNECTING'; status.style.color = '#fbbf24'; dot.style.background = '#fbbf24'; }}
         setTimeout(tick, 1500);
       }};
       setInterval(function(){{
         if(new Date() - lastOk > 3500 && live){{
-          live = false; st.textContent = 'OFFLINE'; st.style.color = '#f87171'; dot.style.background = '#f87171';
+          live = false; status.textContent = 'OFFLINE'; status.style.color = '#f87171'; dot.style.background = '#f87171';
         }}
       }}, 1000);
       tick();
     }})();
     </script>
     """
-    st.iframe(html, width="stretch", height=380)
+    st.iframe(iframe_html, width="stretch", height=430)
 
 
 def _parse_segment_start(name: str) -> Optional[float]:
@@ -930,7 +1617,10 @@ def _fetch_recording_info(base_url: str, name: str) -> Optional[dict]:
     try:
         import urllib.parse
         url = f"{base_url}/recordings/{urllib.parse.quote(name)}/info"
-        with urllib.request.urlopen(url, timeout=5) as r:
+        request = urllib.request.Request(
+            url, headers={"X-FallGuard-Token": _stream_token()}
+        )
+        with urllib.request.urlopen(request, timeout=5) as r:
             return json.loads(r.read().decode())
     except Exception:
         return None
@@ -944,7 +1634,7 @@ def _render_recording_timeline(markers: list, duration_sec: float) -> None:
     """
     if duration_sec <= 0:
         return
-    tier_color = {"high": "#dc2626", "medium": "#d97706", "low": "#16a34a"}
+    tier_color = {"high": "#fb7185", "medium": "#fbbf24", "low": "#34d399"}
     dots = []
     for mk in sorted(markers, key=lambda m: m["offset_sec"]):
         pct = min(max(mk["offset_sec"] / duration_sec * 100.0, 0.0), 100.0)
@@ -952,7 +1642,10 @@ def _render_recording_timeline(markers: list, duration_sec: float) -> None:
             "%H:%M:%S", time.localtime(mk.get("timestamp") or 0)
         )
         color = tier_color.get(mk.get("tier", "low"), "#16a34a")
-        title = f"{ts} \u00b7 Tier: {mk.get('tier','low')} \u00b7 Conf: {mk.get('confidence',0):.2f} \u00b7 {mk.get('subject_id','')}"
+        title = html.escape(
+            f"{ts} \u00b7 Tier: {mk.get('tier','low')} \u00b7 "
+            f"Conf: {mk.get('confidence',0):.2f} \u00b7 {mk.get('subject_id','')}"
+        )
         dots.append(
             f'<a href="?seek={mk["offset_sec"]:.2f}" title="{title}" '
             f'style="position:absolute;top:50%;translate:0 -50%;left:{pct:.2f}%;'
@@ -963,9 +1656,9 @@ def _render_recording_timeline(markers: list, duration_sec: float) -> None:
         )
     bar = (
         f'<div style="position:relative;height:24px;border-radius:8px;'
-        f'background:linear-gradient(90deg,#e2e8f0,#cbd5e1);overflow:visible;">'
+        f'background:linear-gradient(90deg,#243b53,#334e68);overflow:visible;">'
         f"<div style=\"position:absolute;inset:0;margin:auto;height:4px;border-radius:4px;"
-        f"background:#cbd5e1;\"></div>{''.join(dots)}</div>"
+        f"background:#334e68;\"></div>{''.join(dots)}</div>"
     )
     st.caption("\u23f3 Timeline \u00b7 click a marker to seek \u00b7 tier colors: high-red, medium-amber, low-green")
     st.html(bar)
@@ -978,22 +1671,28 @@ def _render_recording_panel(user: dict, base_url: str, cfg: dict = None,
         return
 
     rec_path = Path((cfg or {}).get("record_path", "data/recordings"))
+    recording_enabled = bool((cfg or {}).get("recording_enabled", False))
     live = _fetch_stream_metrics(base_url) or {}
     rec_active = live.get("recording_active", False)
+    supports_recording = live.get("source_type") in {"real_camera", "rtsp"}
     segments = sorted(rec_path.glob("rec_*.mp4"), key=lambda f: f.stat().st_mtime, reverse=True)
     total_mb = sum(f.stat().st_size for f in segments) / 1024 / 1024
 
     st.subheader("Recording")
+    if not recording_enabled:
+        st.info("Recording is disabled by configuration. Existing local segments can still be reviewed below.")
+    elif not supports_recording:
+        st.info("The active demo/synthetic source does not support recording. Switch to a real camera for opt-in recording.")
     c1, c2 = st.columns([1, 4])
     with c1:
         if rec_active:
-            if st.button("\u23f9 Stop", key="rec_stop", use_container_width=True):
+            if st.button("\u23f9 Stop", key="rec_stop", width="stretch", disabled=not (recording_enabled and supports_recording)):
                 _post_stream_action(base_url, "stop")
                 show_toast("Recording stopped", "\u23f9")
                 time.sleep(0.3)
                 st.rerun()
         else:
-            if st.button("\u25cf Record", key="rec_start", use_container_width=True, type="primary"):
+            if st.button("\u25cf Record", key="rec_start", width="stretch", type="primary", disabled=not (recording_enabled and supports_recording)):
                 _post_stream_action(base_url, "start")
                 show_toast("Recording started", "\u25cf")
                 time.sleep(0.3)
@@ -1105,6 +1804,10 @@ def _render_source_toggle():
     ) else "Preloaded video"
     default_idx = 0 if label == "Live webcam" else 1
 
+    st.markdown(
+        '<div class="fg-kicker-row"><div class="fg-panel-title">Input source</div><div class="fg-subtle">Switching starts a fresh detection session</div></div>',
+        unsafe_allow_html=True,
+    )
     c1, c2 = st.columns([3, 1])
     with c1:
         choice = st.radio(
@@ -1222,7 +1925,7 @@ def render_analytics():
     m = st.columns(5)
     m[0].metric("Total alerts", total)
     m[1].metric("Avg confidence", f"{avg_conf*100:.0f}%")
-    m[2].metric("High-risk", high_risk)
+    m[2].metric("High tier", high_risk)
     m[3].metric("Pending", pending)
     m[4].metric("Escalated", escalated)
 
@@ -1243,9 +1946,9 @@ def render_analytics():
     m2[3].metric("Actioned alerts", int(n_actioned))
 
     # ─── CSV export (respects role-filtered alert history) ──────────────────
-    export_cols = ["datetime", "timestamp", "subject_id", "clip_id", "confidence",
-                   "tier", "status", "acknowledged_by", "acknowledged_at",
-                   "grace_period_outcome", "grace_period_response_time"]
+    export_cols = ["id", "datetime", "timestamp", "subject_id", "clip_id", "confidence",
+                   "tier", "status", "delivery_status", "acknowledged_by", "acknowledged_at",
+                   "outcome", "response_time"]
     export_df = alerts_df[[c for c in export_cols if c in alerts_df.columns]].copy()
     if "datetime" in export_df.columns:
         export_df["datetime"] = export_df["datetime"].dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -1259,7 +1962,7 @@ def render_analytics():
         csv_bytes,
         file_name=f"fall_alerts_{pd.Timestamp.now().strftime('%Y%m%d_%H%M%S')}.csv",
         mime="text/csv",
-        use_container_width=True,
+        width="stretch",
     )
     st.caption("Exports all alerts visible in this view as CSV.")
     st.divider()
@@ -1305,19 +2008,19 @@ def render_analytics():
 
             html = ['<div style="display:grid;grid-template-columns:48px repeat(24,1fr);gap:3px;font-size:11px;">']
             html.append('<div></div>' + "".join(
-                f'<div style="text-align:center;color:#666;">{h:02d}</div>' for h in range(24)))
+                f'<div style="text-align:center;color:#9fb3c8;">{h:02d}</div>' for h in range(24)))
             wd_labels = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
             for wd in range(7):
-                html.append(f'<div style="text-align:right;padding-right:6px;color:#666;">{wd_labels[wd]}</div>')
+                html.append(f'<div style="text-align:right;padding-right:6px;color:#9fb3c8;">{wd_labels[wd]}</div>')
                 for h in range(24):
                     v = int(grid.iloc[wd, h])
                     intensity = min(v / max_val, 1.0) if max_val else 0.0
-                    r = int(240 - 215 * intensity)
-                    g = int(247 - 220 * intensity)
-                    b = int(255)
+                    r = int(15 + 20 * intensity)
+                    g = int(35 + 120 * intensity)
+                    b = int(55 + 100 * intensity)
                     cell_info = f"Alerts: {v}" if v else "No alerts"
                     label = str(v) if v else "\u00b7"
-                    color = "#1f2c4d" if intensity > 0.5 else "#7a8699"
+                    color = "#d9e2ec"
                     html.append(
                         f'<div style="background:rgb({r},{g},{b});border-radius:3px;height:22px;'
                         f'display:flex;align-items:center;justify-content:center;color:{color};'
@@ -1414,7 +2117,7 @@ def render_analytics():
                             st.caption("No dated alerts for this subject.")
                     c1, c2, c3, c4 = st.columns(4)
                     c1.metric("Alerts", len(sub_df))
-                    c2.metric("High-risk", high_risk_n)
+                    c2.metric("High tier", high_risk_n)
                     c3.metric("Avg response", f"{avg_resp:.1f} min" if avg_resp is not None else "\u2014")
                     c4.metric("Escalation", f"{esc_rate:.0f}%")
 
@@ -1446,12 +2149,12 @@ def render_settings_page():
         # ─── Health KPIs ────────────────────────────────────────────────────
         uptime_h = status.get("uptime_hours", 0.0)
         uptime_str = f"{uptime_h:.1f} h" if uptime_h > 0 else "n/a"
-        m = st.columns(4)
-        m[0].metric("Uptime", uptime_str)
-        m[1].metric("Alerts today", status.get("total_alerts_today", 0))
-        m[2].metric("Pending", status.get("total_pending", 0))
-        m[3].metric("Escalated", status.get("total_escalated", 0))
-        st.divider()
+        _render_stat_strip([
+            ("Uptime", uptime_str, "Current process", "healthy" if uptime_h > 0 else "attention"),
+            ("Alerts today", str(status.get("total_alerts_today", 0)), "Recorded events", "healthy" if not status.get("total_alerts_today", 0) else "attention"),
+            ("Pending", str(status.get("total_pending", 0)), "Needs response", "attention" if status.get("total_pending", 0) else "healthy"),
+            ("Escalated", str(status.get("total_escalated", 0)), "Urgent follow-up", "urgent" if status.get("total_escalated", 0) else "healthy"),
+        ])
 
         cam_ok = status.get("camera_online", False)
         cam_available = status.get("camera_available", False)
@@ -1485,9 +2188,9 @@ def render_settings_page():
                 st.write("Pose-estimation model used for fall detection.")
                 s.update(label=f"ML model \u2014 {'Loaded' if model_ok else 'Not loaded'}",
                          state="complete" if model_ok else "error")
-            with st.status("False alarms prevented", expanded=False) as s:
-                st.write(f"{status.get('false_alarms_prevented', 0)} events cancelled by validation.")
-                s.update(label=f"{status.get('false_alarms_prevented', 0)} prevented", state="complete")
+            with st.status("Alerts cancelled during grace period", expanded=False) as s:
+                st.write(f"{status.get('cancelled_during_grace', 0)} events were cancelled before escalation.")
+                s.update(label=f"{status.get('cancelled_during_grace', 0)} cancelled", state="complete")
             st.metric("Alerts acknowledged", status.get("total_acknowledged", 0))
             st.metric("Alerts pending", status.get("total_pending", 0))
 
@@ -1496,30 +2199,34 @@ def render_settings_page():
         with c1:
             st.subheader("Privacy-first design")
             st.markdown(
-                "- **No video storage** \u2014 raw frames are never saved to disk.\n"
-                "- **No video transmission** \u2014 no video leaves the device.\n"
-                "- **Pose-only processing** \u2014 only numeric keypoints (33 points) are analyzed.\n"
-                "- **Alert-only output** \u2014 only text alerts are sent when a fall is detected.\n"
-                "- **Local processing** \u2014 all analysis runs on-device.\n"
-                "- **Minimal logging** \u2014 only alert timestamps and outcomes are stored."
+                "- **Raw-frame storage** — disabled by default; opt-in recordings remain local.\n"
+                "- **Remote video transmission** — disabled for the local stream server.\n"
+                "- **Pose-only processing** — numeric keypoints are analyzed in memory.\n"
+                "- **Alert-only output** — notification payloads contain alert metadata, not video.\n"
+                "- **Local processing** — inference runs on the device.\n"
+                "- **Retention controls** — recording and alert retention are configurable."
             )
             st.divider()
             st.info("Recording is opt-in, admin-only, and auto-deletes after the retention window.")
 
         with c2:
-            st.subheader("Compliance")
-            with st.status("GDPR compliant", expanded=False) as s:
-                st.write("Minimal data collection, on-device processing.")
+            st.subheader("Deployment readiness")
+            with st.status("Local processing", expanded=False) as s:
+                st.write("Camera frames are processed on this device.")
                 s.update(state="complete")
-            with st.status("HIPAA ready", expanded=False) as s:
-                st.write("Suitable for protected health information environments.")
+            with st.status("Remote video access", expanded=False) as s:
+                st.write("Direct remote streaming is disabled; use a secured proxy for remote access.")
                 s.update(state="complete")
+            with st.status("Compliance review", expanded=False) as s:
+                st.write("Compliance status requires an organization-specific legal and security review.")
+                s.update(label="Review required", state="running")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # MAIN — native navigation router (+ test override via FG_PAGE env)
 # ═══════════════════════════════════════════════════════════════════════════════
 
 _PAGE_RUNNERS = {
+    "overview": render_overview_page,
     "alerts": render_alerts_page,
     "live": render_live_monitor,
     "analytics": render_analytics,
@@ -1534,14 +2241,24 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded",
     )
-    st.markdown(LIGHT_CSS, unsafe_allow_html=True)
+    st.markdown(THEME_CSS, unsafe_allow_html=True)
+
+    try:
+        runtime_config = load_config()
+        config_errors = validate_config(runtime_config)
+    except Exception as exc:
+        config_errors = [str(exc)]
+    if config_errors:
+        st.error("Configuration must be fixed before the dashboard can start:")
+        for error in config_errors:
+            st.caption(f"• {error}")
+        st.stop()
 
     user = get_current_user()
     if not user:
         render_login_page()
         return
 
-    config = get_dashboard_config()
     alerts_df = filter_by_role(load_alert_history(ALERT_LOG), user)
     status = get_system_status()
 
@@ -1567,7 +2284,8 @@ def main():
         render_sidebar_brand()
         nav = st.navigation({
             "Operations": [
-                st.Page(render_alerts_page, title="Alerts", icon="\U0001f514", url_path="alerts", default=True),
+                st.Page(render_overview_page, title="Overview", icon="🏠", url_path="overview", default=True),
+                st.Page(render_alerts_page, title="Alerts", icon="\U0001f514", url_path="alerts"),
                 st.Page(render_live_monitor, title="Live Monitor", icon="\U0001f4f9", url_path="live"),
             ],
             "Insights": [

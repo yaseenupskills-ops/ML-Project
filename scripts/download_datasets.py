@@ -5,7 +5,6 @@ Since direct automated downloads may require authentication or have changing URL
 this script provides instructions and creates the directory structure.
 """
 
-import os
 import sys
 from pathlib import Path
 
@@ -18,7 +17,7 @@ def setup_directories():
     urfd_dir.mkdir(parents=True, exist_ok=True)
     le2i_dir.mkdir(parents=True, exist_ok=True)
     
-    print(f"Created directories:")
+    print("Created directories:")
     print(f"  {urfd_dir}")
     print(f"  {le2i_dir}")
     
@@ -63,8 +62,8 @@ def verify_directories(urfd_dir, le2i_dir):
     print("DIRECTORY STATUS")
     print("-"*80)
     
-    urfd_count = len(list(urfd_dir.rglob("*"))) if urfd_dir.exists() else 0
-    le2i_count = len(list(le2i_dir.rglob("*"))) if le2i_dir.exists() else 0
+    urfd_count = len([path for path in urfd_dir.rglob("*") if path.is_file()]) if urfd_dir.exists() else 0
+    le2i_count = len([path for path in le2i_dir.rglob("*") if path.is_file()]) if le2i_dir.exists() else 0
     
     print(f"URFD files: {urfd_count} items in {urfd_dir}")
     print(f"Le2i files: {le2i_count} items in {le2i_dir}")

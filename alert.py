@@ -7,14 +7,18 @@ Only alert metadata (text) is transmitted - no video or images.
 
 import smtplib
 import ssl
+import os
 import logging
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Dict, Optional
-import yaml
+from typing import Optional
 import time
+
+from project_config import load_config, resolve_config_path, resolve_path
 from pathlib import Path
 import json
+
+from alert_store import AlertStore
 
 # Try to import Twilio for SMS (stretch goal)
 try:
@@ -32,27 +36,40 @@ class AlertManager:
     
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize with configuration."""
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        config_file = resolve_config_path(config_path)
+        self.config = load_config(config_file)
         
-        self.email_config = self.config['email']
+        self.email_config = dict(self.config.get('email', {}) or {})
+        env_email = {
+            'sender': os.getenv('FALLGUARD_EMAIL_SENDER'),
+            'app_password': os.getenv('FALLGUARD_EMAIL_APP_PASSWORD'),
+            'recipient': os.getenv('FALLGUARD_EMAIL_RECIPIENT'),
+        }
+        for key, value in env_email.items():
+            if value:
+                self.email_config[key] = value
         self._validate_email_config()
         
         # SMS configuration (stretch goal)
-        self.sms_config = self.config.get('sms', {
+        self.sms_config = self.config.get('sms') or {
             'enabled': False,
             'account_sid': '',
             'auth_token': '',
             'from_number': '',
             'to_number': ''
-        })
+        }
         
         # Alert log file (local only)
-        self.alert_log = Path(self.config['paths']['logs_dir']) / "alerts.jsonl"
+        logs_dir = resolve_path(
+            self.config.get('paths', {}).get('logs_dir', 'logs'),
+            base=config_file.parent,
+        )
+        self.alert_log = (logs_dir or Path('logs')) / "alerts.jsonl"
         self.alert_log.parent.mkdir(parents=True, exist_ok=True)
+        self.store = AlertStore(self.alert_log)
         
         logger.info("AlertManager initialized")
-        if self.email_config['sender'] and self.email_config['app_password']:
+        if self.email_config.get('sender') and self.email_config.get('app_password'):
             logger.info("Email alerts configured")
         else:
             logger.warning("Email not fully configured - check config.yaml")
@@ -87,18 +104,23 @@ class AlertManager:
             True if email sent successfully, False otherwise
         """
         # Check if email is configured
-        if not self.email_config['sender'] or not self.email_config['app_password']:
+        if not self.email_config.get('sender') or not self.email_config.get('app_password'):
             logger.error("Email not configured - cannot send alert")
+            if log_alert:
+                self._log_alert(
+                    fall_event, grace_result, 'email', False,
+                    delivery_status='not_configured',
+                )
             return False
         
         try:
             # Create message
             msg = MIMEMultipart()
-            msg['From'] = self.email_config['sender']
-            msg['To'] = self.email_config['recipient']
+            msg['From'] = self.email_config.get('sender')
+            msg['To'] = self.email_config.get('recipient')
             
             # Determine subject based on outcome
-            if grace_result['outcome'] == 'cancelled':
+            if grace_result.get('outcome', 'timeout') == 'cancelled':
                 msg['Subject'] = "ℹ️ Fall Detection Alert - User Responded (False Alarm)"
             else:
                 msg['Subject'] = "⚠️ URGENT: Fall Detection Alert - Possible Fall Detected"
@@ -113,26 +135,25 @@ class AlertManager:
             
             # Send email
             context = ssl.create_default_context()
-            # Try to use certifi for SSL certificates (handles macOS cert issues)
+            # Use verified TLS only. A certificate-loading failure must be
+            # surfaced rather than silently disabling verification.
             try:
                 import certifi
                 context.load_verify_locations(certifi.where())
             except ImportError:
-                # If certifi not available, try to use system certs
-                # If that fails, we'll use an unverified context (not ideal but works for testing)
-                try:
-                    context.load_default_certs()
-                except Exception:
-                    logger.warning("Could not load SSL certificates, using unverified context")
-                    context = ssl._create_unverified_context()
-            
-            with smtplib.SMTP(self.email_config['smtp_host'], self.email_config['smtp_port']) as server:
+                context.load_default_certs()
+
+            with smtplib.SMTP(
+                self.email_config.get('smtp_host', 'smtp.gmail.com'),
+                self.email_config.get('smtp_port', 587),
+                timeout=15,
+            ) as server:
                 server.starttls(context=context)
-                server.login(self.email_config['sender'], self.email_config['app_password'])
+                server.login(self.email_config.get('sender'), self.email_config.get('app_password'))
                 text = msg.as_string()
-                server.sendmail(self.email_config['sender'], self.email_config['recipient'], text)
+                server.sendmail(self.email_config.get('sender'), self.email_config.get('recipient'), text)
             
-            logger.info(f"Email alert sent to {self.email_config['recipient']}")
+            logger.info(f"Email alert sent to {self.email_config.get('recipient')}")
             
             # Log alert locally
             if log_alert:
@@ -142,12 +163,18 @@ class AlertManager:
             
         except smtplib.SMTPAuthenticationError:
             logger.error("Email authentication failed - check app password")
+            if log_alert:
+                self._log_alert(fall_event, grace_result, 'email', False, delivery_status='auth_failed')
             return False
         except smtplib.SMTPException as e:
             logger.error(f"SMTP error sending email: {e}")
+            if log_alert:
+                self._log_alert(fall_event, grace_result, 'email', False, delivery_status='smtp_error')
             return False
         except Exception as e:
             logger.error(f"Unexpected error sending email: {e}")
+            if log_alert:
+                self._log_alert(fall_event, grace_result, 'email', False, delivery_status='error')
             return False
     
     def send_sms_alert(self,
@@ -167,10 +194,12 @@ class AlertManager:
         """
         if not TWILIO_AVAILABLE:
             logger.error("Twilio not available - SMS alerts disabled")
+            self._log_alert(fall_event, grace_result, 'sms', False, delivery_status='sms_unavailable')
             return False
         
         if not self.sms_config.get('enabled', False):
             logger.warning("SMS alerts not enabled in config")
+            self._log_alert(fall_event, grace_result, 'sms', False, delivery_status='sms_disabled')
             return False
         
         # Check SMS configuration
@@ -178,6 +207,7 @@ class AlertManager:
         missing_fields = [f for f in required_fields if not self.sms_config.get(f)]
         if missing_fields:
             logger.error(f"SMS config missing fields: {missing_fields}")
+            self._log_alert(fall_event, grace_result, 'sms', False, delivery_status='sms_misconfigured')
             return False
         
         try:
@@ -228,23 +258,26 @@ class AlertManager:
         timestamp = fall_event.get('timestamp', time.time())
         subject_id = fall_event.get('subject_id', 'unknown')
         clip_id = fall_event.get('clip_id', 'unknown')
-        confidence = fall_event.get('confidence', 0.0)
+        try:
+            confidence = float(fall_event.get('confidence', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
         tier = fall_event.get('tier', 'low')
         
         # Format timestamp
         try:
             dt_string = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(timestamp))
-        except:
+        except (TypeError, ValueError, OSError):
             dt_string = str(timestamp)
         
         # Determine alert type
-        if grace_result['outcome'] == 'cancelled':
+        outcome = grace_result.get('outcome', 'timeout')
+        response_time = grace_result.get('response_time')
+        if outcome == 'cancelled':
             alert_type = "FALSE ALARM CANCELLED"
-            urgency = "Low"
             action = "No action needed - user confirmed they are okay"
         else:
             alert_type = "POSSIBLE FALL DETECTED"
-            urgency = "High"
             action = "Please check on the individual immediately"
         
         if is_sms:
@@ -252,13 +285,13 @@ class AlertManager:
             msg = f"{alert_type} at {dt_string}\n"
             msg += f"Confidence: {tier} ({confidence:.0%})\n"
             msg += f"User: {action}\n"
-            if grace_result['outcome'] != 'cancelled':
+            if grace_result.get('outcome', 'timeout') != 'cancelled':
                 msg += "ALERT SENT - NO RESPONSE RECEIVED"
             else:
                 msg += "FALSE ALARM - USER RESPONDED"
         else:
             # Full format for email
-            msg = f"FALL DETECTION SYSTEM ALERT\n"
+            msg = "FALL DETECTION SYSTEM ALERT\n"
             msg += "=" * 40 + "\n\n"
             msg += f"ALERT TYPE: {alert_type}\n"
             msg += f"TIMESTAMP: {dt_string}\n"
@@ -266,9 +299,9 @@ class AlertManager:
             msg += f"SUBJECT ID: {subject_id}\n"
             msg += f"CLIP ID: {clip_id}\n"
             msg += f"CONFIDENCE: {tier} ({confidence:.1%})\n"
-            msg += f"GRACE PERIOD OUTCOME: {grace_result['outcome']}\n"
-            if grace_result['response_time'] is not None:
-                msg += f"RESPONSE TIME: {grace_result['response_time']:.1f} seconds\n"
+            msg += f"GRACE PERIOD OUTCOME: {grace_result.get('outcome', 'timeout')}\n"
+            if response_time is not None:
+                msg += f"RESPONSE TIME: {response_time:.1f} seconds\n"
             msg += "\n"
             msg += "RECOMMENDED ACTION:\n"
             msg += f"  {action}\n\n"
@@ -285,9 +318,11 @@ class AlertManager:
         
         return msg
     
-    def _log_alert(self, fall_event: dict, grace_result: dict, 
-                  alert_type: str, success: bool):
-        """Log alert attempt to local file."""
+    def _log_alert(self, fall_event: dict, grace_result: dict,
+                   alert_type: str, success: bool,
+                   status: str = 'pending',
+                   delivery_status: str | None = None):
+        """Persist an alert event and return its stable ID."""
         try:
             event_time = fall_event.get('timestamp')
             log_entry = {
@@ -300,27 +335,54 @@ class AlertManager:
                 'fall_event_tier': fall_event.get('tier'),
                 'alert_type': alert_type,
                 'alert_success': success,
+                'delivery_status': delivery_status or ('sent' if success else 'not_sent'),
                 'grace_period_outcome': grace_result.get('outcome'),
                 'grace_period_response_time': grace_result.get('response_time'),
                 'video_clip_path': fall_event.get('video_clip_path', ''),
-                'status': 'pending',
+                'status': status,
                 'acknowledged_by': None,
                 'acknowledged_at': None,
                 'acknowledged_by_role': None,
                 'logged_locally_only': True
             }
-            
-            with open(self.alert_log, 'a') as f:
-                f.write(json.dumps(log_entry) + '\n')
-                
-            logger.debug(f"Logged alert attempt to {self.alert_log}")
-            
+            alert_id = self.store.append(log_entry)
+            logger.debug("Logged alert %s to %s", alert_id, self.alert_log)
+            return alert_id
         except Exception as e:
             logger.error(f"Failed to log alert: {e}")
-    
+            return None
+
+    def log_alert_event(self, fall_event: dict, grace_result: dict,
+                        status: str = 'pending', delivery_status: str = 'not_sent'):
+        """Persist a detection before attempting external notification."""
+        return self._log_alert(
+            fall_event, grace_result, 'email', False,
+            status=status, delivery_status=delivery_status,
+        )
+
+    def update_alert(self, alert_id: str, action: str,
+                     user: str = 'system', role: str = 'system',
+                     extra_updates: dict | None = None) -> bool:
+        """Update an alert by its stable ID."""
+        return self.store.update(
+            alert_id=alert_id,
+            action=action,
+            user=user,
+            role=role,
+            extra_updates=extra_updates,
+        )
+
+    def bulk_update_alert_ids(self, alert_ids: list, user: str, role: str,
+                              action: str = 'acknowledged') -> list:
+        """Update a list of stable alert IDs."""
+        return self.store.update_many(
+            alert_ids, action=action, user=user, role=role,
+        )
+
     @staticmethod
-    def acknowledge_alert(log_file: Path, alert_timestamp: float, 
-                         user: str, role: str, action: str = 'acknowledged') -> bool:
+    def acknowledge_alert(log_file: Path, alert_timestamp: float,
+                         user: str, role: str, action: str = 'acknowledged',
+                         alert_id: str | None = None) -> bool:
         """Update an alert with acknowledgment details.
         
         Args:
@@ -334,25 +396,17 @@ class AlertManager:
             True if updated successfully
         """
         try:
-            lines = []
-            updated = False
-            with open(log_file, 'r') as f:
-                for line in f:
-                    entry = json.loads(line.strip())
-                    if abs(entry.get('timestamp', 0) - alert_timestamp) < 0.01:
-                        entry['status'] = action
-                        entry['acknowledged_by'] = user
-                        entry['acknowledged_at'] = time.time()
-                        entry['acknowledged_by_role'] = role
-                        updated = True
-                    lines.append(json.dumps(entry))
-            
+            updated = AlertStore(log_file).update(
+                alert_id=alert_id,
+                timestamp=None if alert_id else alert_timestamp,
+                action=action,
+                user=user,
+                role=role,
+            )
             if updated:
-                with open(log_file, 'w') as f:
-                    f.write('\n'.join(lines) + '\n')
-                logger.info(f"Alert {alert_timestamp} {action} by {user} ({role})")
+                logger.info("Alert %s %s by %s (%s)", alert_id or alert_timestamp, action, user, role)
             return updated
-            
+
         except Exception as e:
             logger.error(f"Failed to acknowledge alert: {e}")
             return False
@@ -374,56 +428,41 @@ class AlertManager:
         """
         if not alert_timestamps:
             return []
-        targets = set(round(float(ts), 4) for ts in alert_timestamps)
-        updated = []
-        try:
-            lines = []
-            with open(log_file, 'r') as f:
-                for line in f:
-                    entry = json.loads(line.strip())
-                    key = round(float(entry.get('timestamp', 0)), 4)
-                    if key in targets:
-                        entry['status'] = action
-                        entry['acknowledged_by'] = user
-                        entry['acknowledged_at'] = time.time()
-                        entry['acknowledged_by_role'] = role
-                        updated.append(entry.get('timestamp'))
-                    lines.append(json.dumps(entry))
-            if updated:
-                with open(log_file, 'w') as f:
-                    f.write('\n'.join(lines) + '\n')
-                logger.info(f"{len(updated)} alerts {action} by {user} ({role})")
-            return updated
-        except Exception as e:
-            logger.error(f"Failed to bulk update alerts: {e}")
-            return []
+        store = AlertStore(log_file)
+        records = store.read_all()
+        targets = {round(float(ts), 4) for ts in alert_timestamps}
+        selected_ids: list[str] = []
+        updated: list[float] = []
+        seen_targets: set[float] = set()
+        for record in records:
+            try:
+                timestamp = float(record.get('timestamp', 0))
+            except (TypeError, ValueError):
+                continue
+            key = round(timestamp, 4)
+            if key in targets and key not in seen_targets:
+                selected_ids.append(str(record.get('id')))
+                updated.append(timestamp)
+                seen_targets.add(key)
+        if selected_ids:
+            store.update_many(
+                selected_ids, action=action, user=user, role=role,
+            )
+        return updated
 
     @staticmethod
     def read_alerts(log_file: Path) -> list:
         """Read all alerts from log file."""
-        if not log_file.exists():
-            return []
-        alerts = []
-        with open(log_file, 'r') as f:
-            for line in f:
-                try:
-                    alerts.append(json.loads(line.strip()))
-                except json.JSONDecodeError:
-                    continue
-        return alerts
+        return AlertStore(log_file).read_all()
 
     def _read_alert_entry(self, log_file: Path, alert_timestamp: float) -> Optional[dict]:
-        """Read a single alert entry by timestamp."""
-        if not log_file.exists():
-            return None
-        with open(log_file, 'r') as f:
-            for line in f:
-                try:
-                    entry = json.loads(line.strip())
-                except json.JSONDecodeError:
-                    continue
+        """Read a single legacy alert entry by timestamp."""
+        for entry in AlertStore(log_file).read_all():
+            try:
                 if abs(float(entry.get('timestamp', 0)) - float(alert_timestamp)) < 0.01:
                     return entry
+            except (TypeError, ValueError):
+                continue
         return None
 
     def send_escalation_email(self, log_file: Path, alert_timestamp: float) -> bool:
@@ -443,15 +482,19 @@ class AlertManager:
         if not entry or entry.get('status') != 'escalated':
             logger.warning("Cannot send escalation email - alert entry not escalated")
             return False
-        if not self.email_config['sender'] or not self.email_config['app_password']:
+        if not self.email_config.get('sender') or not self.email_config.get('app_password'):
             logger.warning("Email not configured - cannot send escalation alert")
             return False
 
+        try:
+            confidence = float(entry.get('fall_event_confidence', 0.0) or 0.0)
+        except (TypeError, ValueError):
+            confidence = 0.0
         fall_event = {
             'timestamp': entry.get('fall_event_timestamp') or entry.get('timestamp'),
             'subject_id': entry.get('fall_event_subject', 'unknown'),
             'clip_id': entry.get('fall_event_clip', 'unknown'),
-            'confidence': entry.get('fall_event_confidence', 0.0),
+            'confidence': confidence,
             'tier': entry.get('fall_event_tier', 'low'),
             'video_clip_path': entry.get('video_clip_path', ''),
         }
@@ -560,18 +603,22 @@ def test_email_connection(config_path: str = "config.yaml") -> bool:
     try:
         manager = AlertManager(config_path)
         
-        if not manager.email_config['sender'] or not manager.email_config['app_password']:
+        if not manager.email_config.get('sender') or not manager.email_config.get('app_password'):
             print("Email not configured - please set sender and app_password in config.yaml")
             return False
         
         # Try to connect and authenticate
         context = ssl.create_default_context()
-        with smtplib.SMTP(manager.email_config['smtp_host'], manager.email_config['smtp_port']) as server:
+        with smtplib.SMTP(
+            manager.email_config.get('smtp_host', 'smtp.gmail.com'),
+            manager.email_config.get('smtp_port', 587),
+            timeout=15,
+        ) as server:
             server.starttls(context=context)
-            server.login(manager.email_config['sender'], manager.email_config['app_password'])
+            server.login(manager.email_config.get('sender'), manager.email_config.get('app_password'))
         
-        print(f"✓ Successfully connected to {manager.email_config['smtp_host']}")
-        print(f"✓ Authenticated as {manager.email_config['sender']}")
+        print(f"✓ Successfully connected to {manager.email_config.get('smtp_host', 'smtp.gmail.com')}")
+        print(f"✓ Authenticated as {manager.email_config.get('sender')}")
         return True
         
     except Exception as e:

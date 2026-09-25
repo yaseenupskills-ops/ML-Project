@@ -3,12 +3,12 @@
 A privacy-preserving fall detection system that processes webcam/CCTV feeds entirely on-device. The system extracts pose keypoints using MediaPipe, engineers temporal features, classifies fall events, and alerts caretakers via email (with SMS stretch goal) after a grace period for false alarm cancellation.
 
 ## Key Features
-- **On-device processing only**: No video frames ever saved to disk or transmitted
-- **Privacy-first**: Only numeric pose keypoint data processed in memory
-- **Grace period**: 20-second confirmation window to cancel false alarms
+- **On-device processing only**: Raw frames are not stored or transmitted by default
+- **Privacy-first**: Only numeric pose keypoint data is analyzed; recording is opt-in and local
+- **Grace period**: Configurable confirmation window to cancel false alarms
 - **Multi-signal fusion**: Combines velocity, stillness, and orientation features
-- **Subject-independent evaluation**: Train/test split by actor ID to prevent data leakage
-- **Alert history dashboard**: Minimal Streamlit UI showing past alerts only
+- **Reproducible evaluation**: Held-out subject splits must be generated from actor metadata
+- **Caregiver dashboard**: Streamlit overview, alert queue, live monitor, and privacy status
 
 ## System Overview
 ```
@@ -18,11 +18,12 @@ A privacy-preserving fall detection system that processes webcam/CCTV feeds enti
 ```
 
 ## Privacy Guarantees
-- ✅ No `cv2.imwrite()` or equivalent - raw frames never saved
-- ✅ No network transmission of video/images
+- ✅ No raw-frame storage by default
+- ✅ No video transmission to remote services
 - ✅ All inference runs locally on device
-- ✅ Only alert text/email leaves the device
-- ✅ Camera scope limited to living areas (bathroom out-of-scope)
+- ✅ Alert text/metadata is the only external notification payload
+- ✅ Recording is disabled by default and, when enabled, remains local with retention cleanup
+- ✅ Camera scope is limited to living areas (bathroom is out of scope)
 
 ## Project Structure
 ```
@@ -33,20 +34,24 @@ fall-detection/
 ├── models/                  # Trained models (joblib/.pt)
 ├── logs/                    # Alert history, false positives
 ├── scripts/
-│   └── download_datasets.py # Setup instructions
+│   ├── download_datasets.py # Manual dataset setup instructions
+│   ├── preprocess_dataset.py# Subject-aware batch feature generation
+│   └── verify_setup.py      # Artifact/configuration checks
 ├── config.yaml              # User-editable hyperparameters
 ├── config.yaml.example      # Template with documentation
+├── project_config.py        # Project-root config/path validation
+├── alert_store.py           # Locked, atomic local alert store
 ├── pose_extraction.py       # MediaPipe wrapper + smoothing
 ├── features.py              # Velocity, stillness, orientation
 ├── model_rf.py              # Random Forest baseline
 ├── model_cnn_lstm.py        # CNN-LSTM stretch goal
 ├── decision_logic.py        # Majority voting + confidence tiers
-├── grace_period.py          # 20s confirmation window
+├── grace_period.py          # Configurable confirmation window
 ├── alert.py                 # Email/SMS alerting
 ├── simulate_stream.py       # End-to-end pipeline test
-├── evaluate.py              # Subject-independent evaluation
+├── evaluate.py              # Held-out evaluation
 ├── dashboard/
-│   └── app.py               # Streamlit alert history viewer
+│   └── app.py               # Streamlit caregiver dashboard
 └── report/
     └── report.md            # Methodology, results, limitations
 ```
@@ -58,6 +63,7 @@ fall-detection/
    python3 -m venv .venv
    source .venv/bin/activate
    pip install -r requirements.txt
+   python scripts/verify_setup.py
    ```
 
 2. **Download datasets** (manual step):
@@ -75,11 +81,14 @@ fall-detection/
 
 4. **Run baseline pipeline**:
    ```bash
-   # Extract pose keypoints from datasets
-   python pose_extraction.py
-   
-   # Engineer features
-   python features.py
+   # Extract pose keypoints from one video (repeat for the dataset)
+   python pose_extraction.py path/to/video.mp4
+
+   # Build a subject-aware dataset from labeled videos
+   python scripts/preprocess_dataset.py --input-dir data/raw/URFD
+
+   # Engineer features from a video
+   python features.py path/to/video.mp4 subject_id clip_id
    
    # Train Random Forest baseline
    python model_rf.py data/processed/features/train.csv
@@ -90,8 +99,8 @@ fall-detection/
    # Test end-to-end with simulation
    python simulate_stream.py data/processed/keypoints/ models/rf_baseline.joblib
    
-   # Launch dashboard (shows alert history only)
-   streamlit run dashboard/app.py
+   # Launch caregiver dashboard
+   streamlit run dashboard/app.py --server.address 127.0.0.1
    ```
 
 ## Requirements
@@ -99,6 +108,21 @@ fall-detection/
 - Dependencies in `requirements.txt`
 - Webcam or access to test video files
 - Gmail account with app password for email alerts
+
+## Setup and artifact notes
+
+The MediaPipe landmarker model, trained RF artifact, and processed datasets are
+ignored by Git. A fresh checkout must provision these artifacts before running
+the live pipeline. Keep `config.yaml` local; use environment variables such as
+`FALLGUARD_EMAIL_APP_PASSWORD` and `FALLGUARD_AUTH_SECRET` for secrets.
+
+The preprocessing script refuses to use a dataset name as a subject ID. Add a
+`metadata.json` mapping or subject/actor directory names before generating a
+subject-independent split.
+
+The current evaluation report is provisional and must be regenerated after
+creating actor-level metadata and a genuine held-out subject split. Do not use
+the existing report as a production performance claim.
 
 ## Customization
 All key parameters are in `config.yaml`:

@@ -6,13 +6,13 @@ Allows user to cancel alerts within a timeout period.
 """
 
 import time
-import threading
 import json
 import logging
-from typing import Tuple, Optional, Callable
+from typing import Optional, Callable
 from pathlib import Path
-from dataclasses import dataclass, asdict
-import yaml
+from dataclasses import dataclass
+
+from project_config import load_config, resolve_config_path, resolve_path
 
 logger = logging.getLogger(__name__)
 
@@ -30,14 +30,18 @@ class GracePeriodManager:
     
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize with configuration."""
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        config_file = resolve_config_path(config_path)
+        self.config = load_config(config_file)
         
         grace_config = self.config['grace_period']
         self.timeout_sec = grace_config['timeout_sec']
         
         # File for logging false positives (locally only)
-        self.log_file = Path(self.config['paths']['logs_dir']) / "false_positives.jsonl"
+        logs_dir = resolve_path(
+            self.config.get('paths', {}).get('logs_dir', 'logs'),
+            base=config_file.parent,
+        )
+        self.log_file = (logs_dir or Path('logs')) / "false_positives.jsonl"
         self.log_file.parent.mkdir(parents=True, exist_ok=True)
         
         logger.info(f"GracePeriodManager initialized: timeout={self.timeout_sec}s")
@@ -154,7 +158,10 @@ def simulate_grace_period(fall_event: dict,
         GracePeriodResult indicating whether alert should be triggered
     """
     manager = GracePeriodManager()  # Uses default config
-    
+    # The explicit argument is part of the public helper API. Do not silently
+    # ignore it and wait for the configured production timeout.
+    manager.timeout_sec = float(timeout_sec)
+
     def auto_response(timeout_sec):
         """Auto-respond after auto_respond_after seconds."""
         if auto_respond_after is None:
@@ -163,7 +170,7 @@ def simulate_grace_period(fall_event: dict,
         while time.time() - start < timeout_sec:
             if time.time() - start >= auto_respond_after:
                 return True
-            time.sleep(0.1)
+            time.sleep(min(0.01, max(0.0, timeout_sec - (time.time() - start))))
         return False
     
     return manager.confirm_fall(fall_event, get_user_input=auto_response)

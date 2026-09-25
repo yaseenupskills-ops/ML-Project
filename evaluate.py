@@ -7,8 +7,7 @@ Computes precision, recall, F1 for fall class and ablation studies.
 
 import numpy as np
 import pandas as pd
-from typing import Tuple, Dict, List, Optional
-import yaml
+from typing import Any, Tuple, Dict, List, Optional
 import logging
 from pathlib import Path
 import json
@@ -17,7 +16,8 @@ from sklearn.metrics import (
     classification_report, confusion_matrix, 
     f1_score, precision_score, recall_score, roc_auc_score
 )
-import joblib
+
+from project_config import load_config
 
 # Import our modules
 from model_rf import FallDetectionRF
@@ -30,8 +30,7 @@ class FallDetectionEvaluator:
     
     def __init__(self, config_path: str = "config.yaml"):
         """Initialize with configuration."""
-        with open(config_path, 'r') as f:
-            self.config = yaml.safe_load(f)
+        self.config = load_config(config_path)
         
         logger.info("FallDetectionEvaluator initialized")
     
@@ -54,13 +53,22 @@ class FallDetectionEvaluator:
         """
         if 'subject_id' not in df.columns:
             raise ValueError("DataFrame must contain 'subject_id' column")
+        if not 0 < test_fraction < 1:
+            raise ValueError("test_fraction must be between 0 and 1")
         
         unique_subjects = df['subject_id'].unique()
         n_subjects = len(unique_subjects)
+        if n_subjects < 2:
+            raise ValueError(
+                "Subject-independent split requires at least two subject IDs; "
+                f"received {n_subjects}."
+            )
         
         if test_subjects is not None:
             # Use specified subjects for test
             test_subjects = [s for s in test_subjects if s in unique_subjects]
+            if not test_subjects:
+                raise ValueError("No valid test subjects were provided")
             train_subjects = [s for s in unique_subjects if s not in test_subjects]
             logger.info(f"Using specified test subjects: {test_subjects}")
         else:
@@ -93,42 +101,46 @@ class FallDetectionEvaluator:
             Dictionary of evaluation metrics
         """
         # Prepare test data
-        X_test, y_test, groups_test = model.prepare_features(test_df)
-        
-        # Scale features
-        X_test_scaled = model.scaler.transform(X_test)
-        
-        # Predict
-        y_pred = model.predict(X_test_scaled)[0]
-        y_proba = model.predict_proba(X_test_scaled)[0]
+        X_test, y_test, _groups_test = model.prepare_features(test_df)
+        y_test = np.asarray(y_test)
+        if not set(np.unique(y_test)).issubset({0, 1}):
+            raise ValueError("Evaluation currently requires binary labels encoded as 0/1")
+        if len(np.unique(y_test)) < 2:
+            raise ValueError("Evaluation test set must contain both fall and non-fall labels")
+
+        # Predict from raw features. The model wrapper applies the fitted
+        # scaler exactly once.
+        y_pred = model.predict(X_test)[0]
+        y_proba = model.predict_proba(X_test)[0]
         
         # Compute metrics
         metrics = {
             'accuracy': np.mean(y_pred == y_test),
             'precision': precision_score(y_test, y_pred, average='binary', zero_division=0),
             'recall': recall_score(y_test, y_pred, average='binary', zero_division=0),
-            'f1': f1_score(y_test, y_pred, average='binary'),
-            'roc_auc': roc_auc_score(y_test, y_proba) if len(np.unique(y_test)) > 1 else 0.0
+            'f1': f1_score(y_test, y_pred, average='binary', zero_division=0),
+            'roc_auc': roc_auc_score(y_test, y_proba)
         }
         
         # Per-class metrics
         report = classification_report(y_test, y_pred, output_dict=True, zero_division=0)
         metrics['per_class'] = report
         
-        # Confusion matrix
-        cm = confusion_matrix(y_test, y_pred)
+        # Confusion matrix with an explicit binary label order.
+        cm = confusion_matrix(y_test, y_pred, labels=[0, 1])
         metrics['confusion_matrix'] = {
             'tn': int(cm[0, 0]),
             'fp': int(cm[0, 1]),
             'fn': int(cm[1, 0]),
             'tp': int(cm[1, 1])
         }
-        
-        # Fall-class specific metrics (what we care about most)
-        if '1' in report:  # Class 1 is fall
-            metrics['fall_precision'] = report['1']['precision']
-            metrics['fall_recall'] = report['1']['recall']
-            metrics['fall_f1'] = report['1']['f1-score']
+
+        # Fall-class specific metrics (what we care about most).
+        fall_report = report.get(1, report.get('1'))
+        if fall_report is not None:
+            metrics['fall_precision'] = fall_report['precision']
+            metrics['fall_recall'] = fall_report['recall']
+            metrics['fall_f1'] = fall_report['f1-score']
         else:
             metrics['fall_precision'] = 0.0
             metrics['fall_recall'] = 0.0
@@ -158,6 +170,13 @@ class FallDetectionEvaluator:
         X, y, groups = FallDetectionRF().prepare_features(df)
         
         # GroupKFold by subject ID
+        n_subjects = len(np.unique(groups))
+        if n_subjects < 2:
+            raise ValueError("Cross-validation requires at least two subject IDs")
+        if n_splits > n_subjects:
+            raise ValueError(
+                f"n_splits={n_splits} exceeds the number of subjects ({n_subjects})"
+            )
         group_kfold = GroupKFold(n_splits=n_splits)
         
         fold_results = []
@@ -190,7 +209,7 @@ class FallDetectionEvaluator:
                 'accuracy': np.mean(y_pred == y_test),
                 'precision': precision_score(y_test, y_pred, average='binary', zero_division=0),
                 'recall': recall_score(y_test, y_pred, average='binary', zero_division=0),
-                'f1': f1_score(y_test, y_pred, average='binary'),
+                'f1': f1_score(y_test, y_pred, average='binary', zero_division=0),
                 'roc_auc': roc_auc_score(y_test, y_proba) if len(np.unique(y_test)) > 1 else 0.0,
                 'fall_precision': None,
                 'fall_recall': 0.0,
@@ -270,12 +289,14 @@ class FallDetectionEvaluator:
         base_model = FallDetectionRF()
         base_model.model.fit(X_scaled, y)
         base_pred = base_model.model.predict(X_scaled)
-        base_f1 = f1_score(y, base_pred, average='binary')
+        base_f1 = f1_score(y, base_pred, average='binary', zero_division=0)
         
         logger.info(f"Baseline F1 (all features): {base_f1:.3f}")
         
         # Test each feature removal
         ablation_results = {
+            'status': 'diagnostic_only',
+            'warning': 'Feature ablation is fitted/evaluated in-sample; do not use as held-out performance.',
             'baseline': {
                 'f1': base_f1,
                 'features': base_features.copy(),
@@ -304,7 +325,7 @@ class FallDetectionEvaluator:
             model = FallDetectionRF()
             model.model.fit(X_reduced, y)
             y_pred = model.model.predict(X_reduced)
-            f1 = f1_score(y, y_pred, average='binary')
+            f1 = f1_score(y, y_pred, average='binary', zero_division=0)
             
             ablation_results['feature_ablation'][feature_to_remove] = {
                 'f1': f1,
@@ -313,57 +334,15 @@ class FallDetectionEvaluator:
                 'n_features': len(remaining_features)
             }
         
-        # Component ablation: simulate removing key pipeline components
-        # These are approximations since we can't easily disable parts of the pipeline
-        # without retraining, but we can estimate impact
-        
-        components = [
-            'vertical_velocity',
-            'post_event_stillness', 
-            'body_orientation',
-            'keypoint_dispersion',
-            'multi_signal_fusion',  # Using all features vs subset
-            'majority_voting',
-            'grace_period'
-        ]
-        
-        logger.info("Starting component ablation (estimations)")
-        
-        # For component ablation, we'll simulate by adjusting metrics
-        # This is a simplification - in reality would need to retrain without those signals
-        base_precision = precision_score(y, base_pred, average='binary', zero_division=0)
-        base_recall = recall_score(y, base_pred, average='binary', zero_division=0)
-        
-        # Estimated impact based on literature and ablation studies
-        # These are rough estimates for demonstration
-        component_impacts = {
-            'vertical_velocity': {'precision': 0.15, 'recall': 0.20},  # Key fall signal
-            'post_event_stillness': {'precision': 0.10, 'recall': 0.05},  # Helps distinguish falls from sits
-            'body_orientation': {'precision': 0.08, 'recall': 0.12},  # Distinguishes standing vs fallen
-            'keypoint_dispersion': {'precision': 0.05, 'recall': 0.08},  # Movement spread
-            'multi_signal_fusion': {'precision': 0.12, 'recall': 0.10},  # Combining signals
-            'majority_voting': {'precision': 0.07, 'recall': 0.03},  # Reduces false positives
-            'grace_period': {'precision': 0.05, 'recall': 0.01}  # Reduces false alarms via user confirmation
+        # Component ablation is intentionally not fabricated. Removing a
+        # pipeline component requires a separately trained, held-out
+        # experiment; simulated literature values must not be reported as
+        # measurements.
+        ablation_results['component_ablation'] = {
+            'status': 'not_evaluated',
+            'reason': 'Component-level held-out experiments have not been implemented.',
         }
-        
-        for component, impacts in component_impacts.items():
-            # Simulate removing this component (increase in errors)
-            est_precision = base_precision * (1 - impacts['precision'])
-            est_recall = base_recall * (1 - impacts['recall'])
-            est_f1 = 2 * (est_precision * est_recall) / (est_precision + est_recall) if (est_precision + est_recall) > 0 else 0.0
-            
-            ablation_results['component_ablation'][component] = {
-                'estimated_precision': est_precision,
-                'estimated_recall': est_recall,
-                'estimated_f1': est_f1,
-                'precision_drop': base_precision - est_precision,
-                'recall_drop': base_recall - est_recall,
-                'f1_drop': base_f1 - est_f1,
-                'notes': f'Simulated impact of removing {component}'
-            }
-        
-        logger.info("Ablation study complete")
-        return ablation_results
+        logger.info("Ablation study complete (feature-only results)")
     
     def compare_models(self,
                       rf_results: Dict[str, Any],
@@ -448,95 +427,55 @@ def evaluate_fall_detection(features_csv: str,
                            model_path: str = "models/rf_baseline.joblib",
                            config_path: str = "config.yaml",
                            output_json: str = "report/evaluation_results.json") -> Dict[str, Any]:
+    """Evaluate a model on a held-out feature CSV.
+
+    ``features_csv`` must be a test set produced from subjects/clips that were
+    not used to train ``model_path``.  This function deliberately does not
+    create a new split after loading a pre-trained model; doing so would leak
+    test subjects into training.
     """
-    Convenience function to evaluate fall detection model.
-    
-    Args:
-        features_csv: Path to features CSV file
-        model_path: Path to trained model
-        config_path: Path to configuration file
-        output_json: Path to save evaluation results
-        
-    Returns:
-        Dictionary of evaluation results
-    """
-    # Load features
     df = pd.read_csv(features_csv)
-    logger.info(f"Loaded features from {features_csv}: {len(df)} rows")
-    
-    # Initialize evaluator
+    if 'subject_id' not in df.columns:
+        raise ValueError("Evaluation data must contain subject_id")
+    logger.info("Loaded held-out features from %s: %s rows", features_csv, len(df))
+
     evaluator = FallDetectionEvaluator(config_path)
-    
-    # Perform subject-independent train/test split
-    train_df, test_df = evaluator.subject_independent_split(df)
-    
-    # Load model
     model = FallDetectionRF(config_path)
     model.load_model(Path(model_path))
-    
-    # Evaluate on test set
-    test_results = evaluator.evaluate_model(model, test_df)
-    
-    # Perform cross-validation on training data (to check for overfitting)
-    cv_results = evaluator.cross_validate_subject_independent(train_df, n_splits=5)
-    
-    # Perform ablation study on training data
-    feature_names = [col for col in train_df.columns 
-                    if col not in ['subject_id', 'clip_id', 'window_start', 'window_end',
-                                  'window_start_time', 'window_end_time', 'label', 'fall', 'activity']]
-    
-    ablation_results = evaluator.ablation_study(train_df, feature_names)
-    
-    # Compile final results
+    test_results = evaluator.evaluate_model(model, df)
+
+    meta_cols = {'subject_id', 'clip_id', 'window_start', 'window_end',
+                 'window_start_time', 'window_end_time', 'label', 'fall', 'activity'}
+    feature_names = [col for col in df.columns if col not in meta_cols]
     final_results = {
         'dataset_info': {
             'total_samples': len(df),
-            'train_samples': len(train_df),
-            'test_samples': len(test_df),
             'n_features': len(feature_names),
-            'subjects_total': df['subject_id'].nunique(),
-            'subjects_train': train_df['subject_id'].nunique(),
-            'subjects_test': test_df['subject_id'].nunique()
+            'subjects_total': int(df['subject_id'].nunique()),
+            'clips_total': int(df['clip_id'].nunique()) if 'clip_id' in df.columns else None,
+            'evaluation_scope': 'held-out test CSV; verify subject IDs were excluded from training',
         },
         'test_set_evaluation': test_results,
-        'cross_validation': cv_results,
-        'ablation_study': ablation_results,
         'model_info': {
             'model_path': model_path,
             'model_type': 'Random Forest',
-            'evaluation_date': pd.Timestamp.now().isoformat()
-        }
+            'evaluation_date': pd.Timestamp.now().isoformat(),
+        },
     }
-    
-    # Save results
+
     evaluator.save_evaluation_results(final_results, Path(output_json))
-    
-    # Print summary
-    print("\n" + "="*60)
+
+    print("\n" + "=" * 60)
     print("FALL DETECTION EVALUATION RESULTS")
-    print("="*60)
-    print(f"Dataset: {len(df)} samples from {df['subject_id'].nunique()} subjects")
-    print(f"Train/Test split: {len(train_df)}/{len(test_df)} samples "
-          f"({train_df['subject_id'].nunique()}/{test_df['subject_id'].nunique()} subjects)")
-    print()
-    print("TEST SET PERFORMANCE:")
-    print(f"  Accuracy:  {test_results['accuracy']:.3f}")
-    print(f"  Precision: {test_results['precision']:.3f}")
-    print(f"  Recall:    {test_results['recall']:.3f}")
-    print(f"  F1-Score:  {test_results['f1']:.3f}")
-    print(f"  ROC AUC:   {test_results['roc_auc']:.3f}")
-    print()
-    print("FALL-CLASS SPECIFIC (MOST IMPORTANT):")
-    print(f"  Precision: {test_results['fall_precision']:.3f}")
-    print(f"  Recall:    {test_results['fall_recall']:.3f}")
-    print(f"  F1-Score:  {test_results['fall_f1']:.3f}")
-    print()
-    print("5-FOLD CROSS-VALIDATION (TRAIN SET):")
-    print(f"  Fall F1: {cv_results['mean_fall_f1']:.3f} ± {cv_results['std_fall_f1']:.3f}")
-    print()
+    print("=" * 60)
+    print(f"Held-out samples: {len(df)} from {df['subject_id'].nunique()} subjects")
+    print(f"Precision: {test_results['precision']:.3f}")
+    print(f"Recall:    {test_results['recall']:.3f}")
+    print(f"F1-Score:  {test_results['f1']:.3f}")
+    if test_results['roc_auc'] is not None:
+        print(f"ROC AUC:   {test_results['roc_auc']:.3f}")
     print(f"Results saved to: {output_json}")
-    print("="*60)
-    
+    print("=" * 60)
     return final_results
 
 if __name__ == "__main__":
