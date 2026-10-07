@@ -453,6 +453,293 @@ a {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes slideInRight {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes scaleUp {
+  from { transform: scale(0.94); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+@keyframes radarPing {
+  0% { transform: scale(0.85); opacity: 0.8; }
+  70% { transform: scale(1.8); opacity: 0; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes soundWave {
+  0%, 100% { height: 4px; }
+  50% { height: 16px; }
+}
+
 .animate-fade-in {
   animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+.animate-scale-up {
+  animation: scaleUp 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-slide-right {
+  animation: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Modals & Drawers */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.75);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  z-index: 999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.modal-card {
+  background: #0f172a;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: var(--radius-xl);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.7), 0 0 40px rgba(20, 184, 166, 0.15);
+  width: 100%;
+  max-width: 580px;
+  overflow: hidden;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 7, 18, 0.65);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  z-index: 998;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.drawer-panel {
+  width: 100%;
+  max-width: 480px;
+  background: #0b1329;
+  border-left: 1px solid rgba(255, 255, 255, 0.12);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: -15px 0 50px rgba(0, 0, 0, 0.6);
+  overflow-y: auto;
+}
+
+/* Circular countdown timer */
+.countdown-container {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.countdown-svg {
+  transform: rotate(-90deg);
+  width: 100%;
+  height: 100%;
+}
+
+.countdown-bg-circle {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+  stroke-width: 6;
+}
+
+.countdown-progress-circle {
+  fill: none;
+  stroke-width: 6;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 0.8s ease, stroke 0.3s ease;
+}
+
+.countdown-text {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: 1.5rem;
+  color: #fff;
+}
+
+/* Interactive slider controls */
+.interactive-slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  outline: none;
+  transition: background 0.2s;
+}
+
+.interactive-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #14b8a6;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(20, 184, 166, 0.6);
+  border: 2px solid #fff;
+  transition: transform 0.15s ease;
+}
+
+.interactive-slider::-webkit-slider-thumb:hover {
+  transform: scale(1.2);
+}
+
+/* Custom interactive HUD & badge elements */
+.hud-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  background: rgba(15, 23, 42, 0.75);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: #e2e8f0;
+}
+
+.hud-control-btn {
+  background: rgba(15, 23, 42, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #cbd5e1;
+  padding: 0.45rem 0.75rem;
+  border-radius: 10px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.hud-control-btn:hover {
+  background: rgba(30, 41, 59, 0.95);
+  color: #fff;
+  border-color: rgba(94, 234, 212, 0.5);
+  transform: translateY(-1px);
+}
+
+.hud-control-btn.active {
+  background: rgba(20, 184, 166, 0.25);
+  color: #5eead4;
+  border-color: rgba(20, 184, 166, 0.6);
+}
+
+/* Keyboard badge */
+.kbd-badge {
+  display: inline-block;
+  padding: 0.15rem 0.45rem;
+  font-size: 0.72rem;
+  font-family: monospace;
+  font-weight: 700;
+  color: #94a3b8;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  box-shadow: 0 2px 0 rgba(0, 0, 0, 0.3);
+}
+
+/* Sound Wave Bars */
+.sound-bars {
+  display: flex;
+  align-items: center;
+  gap: 2.5px;
+  height: 16px;
+}
+
+.sound-bar {
+  width: 2.5px;
+  background: #5eead4;
+  border-radius: 2px;
+  animation: soundWave 1.2s ease-in-out infinite;
+}
+
+.sound-bar:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.sound-bar:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+/* Search Input */
+.search-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.search-input {
+  width: 100%;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--border-light);
+  border-radius: 12px;
+  padding: 0.65rem 1rem 0.65rem 2.6rem;
+  font-size: 0.88rem;
+  color: #fff;
+  font-family: inherit;
+  outline: none;
+  transition: all 0.2s ease;
+}
+
+.search-input:focus {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(94, 234, 212, 0.6);
+  box-shadow: 0 0 0 3px rgba(20, 184, 166, 0.15);
+}
+
+.search-input::placeholder {
+  color: var(--text-subtle);
+}
+
+/* Tab filter button */
+.tab-filter-btn {
+  padding: 0.45rem 0.95rem;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-filter-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+}
+
+.tab-filter-btn.active {
+  background: rgba(20, 184, 166, 0.18);
+  color: #5eead4;
+  border-color: rgba(20, 184, 166, 0.4);
+}
+
