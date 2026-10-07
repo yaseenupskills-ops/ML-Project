@@ -10,14 +10,16 @@ import os
 import sys
 import time
 import json
+import hmac
+import hashlib
 import logging
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Literal
 
-from fastapi import FastAPI, HTTPException, Response
+from fastapi import FastAPI, HTTPException, Cookie, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 
 # Ensure project root is in sys.path
@@ -40,6 +42,162 @@ app = FastAPI(
     version="2.0.0",
 )
 
+ALERT_LOG = resolve_path("logs/alerts.jsonl", base=PROJECT_ROOT)
+store = AlertStore(ALERT_LOG)
+config = load_config()
+
+
+# ─── Authentication ──────────────────────────────────────────────────────────
+
+AUTH_COOKIE = "fg_token"
+
+
+def get_auth_config() -> dict:
+    return config.get("auth", {"enabled": False, "users": []})
+
+
+def _auth_secret() -> str:
+    return (
+        os.getenv("FALLGUARD_AUTH_SECRET")
+        or get_auth_config().get("jwt_secret")
+        or get_auth_config().get("secret_key")
+        or "fallback-secret-key-change-me"
+    )
+
+
+def verify_password(password: str, stored_hash: str) -> bool:
+    """Verify a plaintext password against a bcrypt or PBKDF2-SHA256 hash."""
+    try:
+        if stored_hash.startswith("$2b$") or stored_hash.startswith("$2a$"):
+            import bcrypt
+            return bcrypt.checkpw(password.encode(), stored_hash.encode())
+        salt, digest = stored_hash.split("$", 1)
+        result = hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 100000)
+        return hmac.compare_digest(result.hex(), digest)
+    except Exception:
+        return False
+
+
+def generate_token(username: str, role: str, secret: str) -> str:
+    payload = f"{username}:{role}:{int(time.time())}"
+    sig = hmac.new(secret.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}:{sig}"
+
+
+def validate_token(token: Optional[str]) -> Optional[dict]:
+    """Validate an HMAC-signed session token; return the user profile or None."""
+    if not token:
+        return None
+    try:
+        payload, sig = token.rsplit(":", 1)
+        expected = hmac.new(_auth_secret().encode(), payload.encode(), hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(sig, expected):
+            return None
+        username, _role, ts = payload.split(":", 2)
+        expiry_hours = float(get_auth_config().get("token_expiry_hours", 24) or 24)
+        if time.time() - int(ts) > expiry_hours * 3600:
+            return None
+        for u in get_auth_config().get("users", []):
+            if u.get("username") == username:
+                return {
+                    "username": username,
+                    "role": u.get("role", "viewer"),
+                    "display_name": u.get("display_name", username),
+                    "assigned_subjects": u.get("assigned_subjects", []),
+                }
+        # User was removed from config → their tokens are no longer valid
+        return None
+    except Exception:
+        return None
+
+
+def _public_user(user: dict) -> dict:
+    return {
+        "username": user["username"],
+        "role": user.get("role", "viewer"),
+        "display_name": user.get("display_name", user["username"]),
+        "assigned_subjects": user.get("assigned_subjects", []),
+    }
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+@app.post("/api/auth/login")
+def login(req: LoginRequest, response: Response):
+    """Verify credentials and set an httpOnly session cookie."""
+    username = (req.username or "").strip()
+    user = None
+    for candidate in get_auth_config().get("users", []):
+        if candidate.get("username") == username and verify_password(req.password, candidate.get("password_hash", "")):
+            user = candidate
+            break
+    if user is None:
+        # Do not reveal whether the username exists
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    expiry_hours = float(get_auth_config().get("token_expiry_hours", 24) or 24)
+    token = generate_token(user["username"], user.get("role", "viewer"), _auth_secret())
+    response.set_cookie(
+        AUTH_COOKIE,
+        token,
+        max_age=int(expiry_hours * 3600),
+        httponly=True,
+        samesite="lax",
+        path="/",
+    )
+    return _public_user(user)
+
+
+@app.post("/api/auth/logout")
+def logout(response: Response):
+    """Clear the session cookie."""
+    response.delete_cookie(AUTH_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def current_user(fg_token: Optional[str] = Cookie(default=None)):
+    """Return the signed-in user profile, a guest profile when auth is disabled, or 401."""
+    if not get_auth_config().get("enabled", False):
+        return {
+            "username": "guest",
+            "role": "guest",
+            "display_name": "Guest User",
+            "assigned_subjects": [],
+            "guest": True,
+        }
+    user = validate_token(fg_token)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+    return user
+
+
+@app.get("/health")
+def health():
+    """Public liveness probe (never requires auth)."""
+    return {"status": "ok"}
+
+
+@app.middleware("http")
+async def auth_guard(request: Request, call_next):
+    """Reject unauthenticated API calls when auth is enabled."""
+    if request.method == "OPTIONS":
+        return await call_next(request)
+    if request.url.path.startswith("/api/auth/") or request.url.path == "/health":
+        return await call_next(request)
+    if not get_auth_config().get("enabled", False):
+        return await call_next(request)
+    user = validate_token(request.cookies.get(AUTH_COOKIE))
+    if user is None:
+        return JSONResponse({"detail": "Not authenticated"}, status_code=401)
+    request.state.user = user
+    return await call_next(request)
+
+
+# Registered last so CORS wraps the auth guard: preflight is handled first and
+# every response (including 401s) carries CORS headers.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -47,10 +205,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-ALERT_LOG = resolve_path("logs/alerts.jsonl", base=PROJECT_ROOT)
-store = AlertStore(ALERT_LOG)
-config = load_config()
 
 # Ensure stream server is running
 def get_or_start_stream_server():

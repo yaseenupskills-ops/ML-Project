@@ -287,7 +287,7 @@ export default function CaregiverHomePage() {
   // Snapshot Capture tool
   const handleCaptureSnapshot = () => {
     playSound('click');
-    const snapUrl = `http://localhost:8000/api/stream/snapshot?t=${Date.now()}`;
+    const snapUrl = `/api/stream/snapshot?t=${Date.now()}`;
     setSnapshotModalUrl(snapUrl);
     setSnapshotTime(new Date().toLocaleTimeString());
   };
@@ -738,8 +738,8 @@ export default function CaregiverHomePage() {
                 key={status.active_source}
                 src={
                   feedTimestamp > 0
-                    ? `http://localhost:8000/api/stream/feed?src=${status.active_source}&t=${feedTimestamp}`
-                    : `http://localhost:8000/api/stream/feed?src=${status.active_source}`
+                    ? `/api/stream/feed?src=${status.active_source}&t=${feedTimestamp}`
+                    : `/api/stream/feed?src=${status.active_source}`
                 }
                 alt="Room Live Stream"
                 style={{
@@ -757,9 +757,9 @@ export default function CaregiverHomePage() {
                 }}
                 onError={(e) => {
                   const target = e.target as HTMLImageElement;
-                  target.src = `http://localhost:8000/api/stream/snapshot?t=${Date.now()}`;
+                  target.src = `/api/stream/snapshot?t=${Date.now()}`;
                   setTimeout(() => {
-                    target.src = `http://localhost:8000/api/stream/feed?t=${Date.now()}`;
+                    target.src = `/api/stream/feed?t=${Date.now()}`;
                   }, 1200);
                 }}
               />

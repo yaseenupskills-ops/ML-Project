@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import {
   ShieldCheck,
   Heart,
@@ -18,11 +18,20 @@ import {
   Check,
   Copy,
   ExternalLink,
+  LogOut,
 } from 'lucide-react';
 import { isSoundEnabled, setSoundEnabled, playSound } from '@/lib/sound';
 
+interface SessionUser {
+  username: string;
+  role: string;
+  display_name: string;
+  guest?: boolean;
+}
+
 export default function InteractiveNavbar() {
   const pathname = usePathname();
+  const router = useRouter();
   const [soundOn, setSoundOn] = useState(true);
   const [showSpeedDial, setShowSpeedDial] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
@@ -31,10 +40,53 @@ export default function InteractiveNavbar() {
   const [selectedRoom, setSelectedRoom] = useState('Living Room');
   const MONITORED_ROOMS = ['Living Room', 'Bedroom', 'Studio'];
   const [copiedNumber, setCopiedNumber] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<SessionUser | null>(null);
 
   useEffect(() => {
     setSoundOn(isSoundEnabled());
   }, []);
+
+  // Load the signed-in user; bounce to /login when the session is invalid.
+  // Re-runs on navigation so the chip appears after login / disappears after logout.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/auth/me', { cache: 'no-store' });
+        if (cancelled) return;
+        if (res.status === 401) {
+          setCurrentUser(null);
+          if (pathname !== '/login') {
+            const next = encodeURIComponent(pathname || '/');
+            router.replace(`/login?next=${next}`);
+          }
+          return;
+        }
+        if (res.ok) {
+          const data: SessionUser = await res.json();
+          setCurrentUser(data.guest ? null : data);
+        }
+      } catch {
+        // Backend unreachable — leave the chip hidden; page proxy handles access
+        if (!cancelled) setCurrentUser(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, router]);
+
+  const handleLogout = async () => {
+    playSound('click');
+    try {
+      await fetch('/api/auth/logout', { method: 'POST' });
+    } catch {
+      // Even if the call fails, drop the local session state
+    }
+    setCurrentUser(null);
+    router.replace('/login');
+    router.refresh();
+  };
 
   const closeSidebar = () => {
     setShowSidebar(false);
@@ -175,6 +227,69 @@ export default function InteractiveNavbar() {
             >
               <Command size={15} />
             </button>
+
+            {/* Signed-in user chip + logout */}
+            {currentUser && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '0.55rem',
+                  paddingLeft: '0.65rem',
+                  borderLeft: '1px solid var(--border-light)',
+                }}
+                title={`Signed in as ${currentUser.display_name} (${currentUser.role})`}
+              >
+                <div
+                  style={{
+                    width: 30,
+                    height: 30,
+                    borderRadius: '50%',
+                    background: 'rgba(20, 184, 166, 0.18)',
+                    border: '1px solid var(--border-glow)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.72rem',
+                    fontWeight: 800,
+                    color: '#5eead4',
+                    letterSpacing: '0.02em',
+                    flexShrink: 0,
+                  }}
+                >
+                  {currentUser.display_name
+                    .split(' ')
+                    .map((w) => w[0])
+                    .slice(0, 2)
+                    .join('')
+                    .toUpperCase()}
+                </div>
+                <div style={{ lineHeight: 1.15, display: 'flex', flexDirection: 'column' }}>
+                  <span style={{ fontSize: '0.78rem', fontWeight: 700, color: '#f8fafc' }}>
+                    {currentUser.display_name}
+                  </span>
+                  <span
+                    style={{
+                      fontSize: '0.6rem',
+                      fontWeight: 700,
+                      textTransform: 'uppercase',
+                      letterSpacing: '0.08em',
+                      color: '#5eead4',
+                    }}
+                  >
+                    {currentUser.role}
+                  </span>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="hud-control-btn"
+                  title="Sign out"
+                  style={{ padding: '0.45rem 0.6rem' }}
+                >
+                  <LogOut size={15} />
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>

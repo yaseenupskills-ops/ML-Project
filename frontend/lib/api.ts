@@ -53,7 +53,9 @@ export interface SummaryMetrics {
   privacy_mode: string;
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+// Same-origin by default: requests go through the Next `/api/:path*` rewrite
+// so the auth cookie flows without CORS. Cross-origin URLs would break auth.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
 // Fallback seed data for interactive demo when backend is offline
 const INITIAL_DEMO_ALERTS: AlertItem[] = [
