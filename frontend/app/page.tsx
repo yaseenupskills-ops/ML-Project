@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import Link from 'next/link';
 import {
   ShieldCheck,
   AlertTriangle,
@@ -13,29 +12,21 @@ import {
   PhoneCall,
   CheckCircle2,
   XCircle,
-  Clock,
   Sparkles,
-  ArrowRight,
-  RefreshCw,
   Camera,
-  Maximize2,
-  Minimize2,
   ZoomIn,
   Activity,
   Sliders,
   Send,
   Radio,
-  FileText,
   X,
   Play,
   RotateCcw,
 } from 'lucide-react';
 import {
   fetchStatus,
-  fetchAlerts,
   takeAlertAction,
   switchCameraSource,
-  saveAlertNote,
   setLocalSimulationStatus,
   SystemStatus,
   AlertItem,
@@ -55,17 +46,12 @@ export default function CaregiverHomePage() {
     last_checked_at: 'Just now',
   });
 
-  const [alerts, setAlerts] = useState<AlertItem[]>([]);
-
   // UI Interactive States
   const [privacyLevel, setPrivacyLevel] = useState<number>(0); // 0 = clear, 1 = frosted, 2 = silhouette
   const [zoomLevel, setZoomLevel] = useState<number>(1); // 1, 1.25, 1.5
-  const [theaterMode, setTheaterMode] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [switchingSource, setSwitchingSource] = useState(false);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
-  const [selectedAlertForDrawer, setSelectedAlertForDrawer] = useState<AlertItem | null>(null);
-  const [drawerNoteText, setDrawerNoteText] = useState('');
   const [snapshotModalUrl, setSnapshotModalUrl] = useState<string | null>(null);
   const [snapshotTime, setSnapshotTime] = useState<string>('');
   const [pingPulsing, setPingPulsing] = useState(false);
@@ -75,19 +61,15 @@ export default function CaregiverHomePage() {
   // Countdown timer reference
   const countdownIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Poll status and alerts regularly
+  // Poll status regularly
   useEffect(() => {
     let isMounted = true;
 
     async function loadData() {
       if (isSimulatingGrace) return; // don't overwrite during interactive simulation
-      const [st, al] = await Promise.all([
-        fetchStatus(),
-        fetchAlerts(),
-      ]);
+      const st = await fetchStatus();
       if (isMounted) {
         setStatus(st);
-        setAlerts(al.slice(0, 5));
       }
     }
 
@@ -120,7 +102,6 @@ export default function CaregiverHomePage() {
       } else if (e.key === 'd' || e.key === 'D') {
         handleSourceSwitch(status.active_source === 'demo' ? 'webcam' : 'demo');
       } else if (e.key === 'Escape') {
-        setSelectedAlertForDrawer(null);
         setSnapshotModalUrl(null);
       }
     };
@@ -234,8 +215,6 @@ export default function CaregiverHomePage() {
 
       const newStatus = await fetchStatus();
       setStatus({ ...newStatus, resident_status: 'safe', active_alert: null, grace_seconds_remaining: 0 });
-      const al = await fetchAlerts();
-      setAlerts(al.slice(0, 5));
     }
   };
 
@@ -271,18 +250,6 @@ export default function CaregiverHomePage() {
     const snapUrl = `/api/stream/snapshot?t=${Date.now()}`;
     setSnapshotModalUrl(snapUrl);
     setSnapshotTime(new Date().toLocaleTimeString());
-  };
-
-  // Save Caregiver Note in Drawer
-  const handleSaveDrawerNote = async () => {
-    if (!selectedAlertForDrawer) return;
-    playSound('ping');
-    await saveAlertNote(selectedAlertForDrawer.id, drawerNoteText);
-    setSelectedAlertForDrawer({ ...selectedAlertForDrawer, notes: drawerNoteText });
-    setAlerts((prev) =>
-      prev.map((a) => (a.id === selectedAlertForDrawer.id ? { ...a, notes: drawerNoteText } : a))
-    );
-    triggerToast('Caregiver note saved successfully.');
   };
 
   const isSafe = status.resident_status === 'safe';
@@ -576,17 +543,16 @@ export default function CaregiverHomePage() {
         </div>
       </section>
 
-      {/* ─── Main Content Grid: Live View & Care Insights ─────────────────── */}
+      {/* ─── Main Content Grid: Live View ─────────────────────────────────── */}
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: theaterMode ? '1fr' : 'minmax(0, 1.65fr) minmax(0, 1fr)',
+          gridTemplateColumns: '1fr',
           gap: '1.8rem',
           marginTop: '1.5rem',
-          transition: 'all 0.3s ease',
         }}
       >
-        {/* Left Column: Live Visual Check-In */}
+        {/* Live Visual Check-In */}
         <div>
           <div className="glass-panel" style={{ padding: '1.4rem' }}>
             {/* Header Toolbar */}
@@ -645,18 +611,6 @@ export default function CaregiverHomePage() {
                 >
                   <ZoomIn size={14} />
                   <span>{zoomLevel}x</span>
-                </button>
-
-                {/* Theater Mode */}
-                <button
-                  onClick={() => {
-                    setTheaterMode(!theaterMode);
-                    playSound('click');
-                  }}
-                  className="hud-control-btn"
-                  title="Toggle Theater / Expanded view"
-                >
-                  {theaterMode ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
                 </button>
 
                 {/* Camera Source Toggle: Live Cam vs Fall Demo Clip */}
@@ -892,369 +846,7 @@ export default function CaregiverHomePage() {
           </div>
         </div>
 
-        {/* Right Column: Daily Stats & Interactive Activity Log */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.4rem' }}>
-          {/* Recent Events Interactive Snippet */}
-          <div className="glass-panel" style={{ padding: '1.4rem', flex: 1 }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '1rem',
-              }}
-            >
-              <div>
-                <h2
-                  style={{
-                    fontFamily: 'var(--font-display)',
-                    fontSize: '1.15rem',
-                    fontWeight: 700,
-                    color: '#fff',
-                  }}
-                >
-                  Recent Care Activity
-                </h2>
-                <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)' }}>
-                  Click any event to view pose telemetry or add notes
-                </span>
-              </div>
-              <Link
-                href="/history"
-                onClick={() => playSound('click')}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.3rem',
-                  fontSize: '0.82rem',
-                  color: '#5eead4',
-                  fontWeight: 600,
-                }}
-              >
-                <span>View Full Log</span>
-                <ArrowRight size={14} />
-              </Link>
-            </div>
-
-            {alerts.length === 0 ? (
-              <div
-                style={{
-                  padding: '2rem 1rem',
-                  textAlign: 'center',
-                  color: 'var(--text-subtle)',
-                  fontSize: '0.88rem',
-                }}
-              >
-                <CheckCircle2 size={32} color="#10b981" style={{ margin: '0 auto 0.5rem' }} />
-                <div>No incidents recorded. Everything is peaceful.</div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.65rem' }}>
-                {alerts.map((item) => (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      setSelectedAlertForDrawer(item);
-                      setDrawerNoteText(item.notes || '');
-                      playSound('click');
-                    }}
-                    className="event-card"
-                    style={{
-                      padding: '0.95rem 1.15rem',
-                      margin: 0,
-                      cursor: 'pointer',
-                      borderLeft:
-                        item.status === 'pending'
-                          ? '3px solid #f43f5e'
-                          : item.status === 'escalated'
-                          ? '3px solid #f59e0b'
-                          : '3px solid #10b981',
-                    }}
-                    title="Click to view details and add caregiver notes"
-                  >
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span
-                          style={{
-                            fontWeight: 700,
-                            fontSize: '0.9rem',
-                            color:
-                              item.status === 'pending'
-                                ? '#f43f5e'
-                                : item.status === 'escalated'
-                                ? '#f59e0b'
-                                : '#34d399',
-                          }}
-                        >
-                          {item.plain_status}
-                        </span>
-                        <span style={{ fontSize: '0.75rem', color: 'var(--text-subtle)' }}>
-                          · {item.room}
-                        </span>
-                      </div>
-                      <div
-                        style={{
-                          fontSize: '0.78rem',
-                          color: 'var(--text-muted)',
-                          marginTop: '0.2rem',
-                        }}
-                      >
-                        {item.time_formatted} ({item.exact_time})
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <span
-                        style={{
-                          padding: '0.25rem 0.6rem',
-                          borderRadius: '999px',
-                          fontSize: '0.7rem',
-                          fontWeight: 700,
-                          background:
-                            item.severity === 'High Risk'
-                              ? 'rgba(244,63,94,0.15)'
-                              : 'rgba(255,255,255,0.06)',
-                          color: item.severity === 'High Risk' ? '#fda4af' : '#94a3b8',
-                          border: '1px solid var(--border-light)',
-                        }}
-                      >
-                        {item.severity}
-                      </span>
-                      <ArrowRight size={14} color="var(--text-subtle)" />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
       </div>
-
-      {/* ─── Interactive Event Detail Drawer ─────────────────────────────── */}
-      {selectedAlertForDrawer && (
-        <div className="drawer-overlay" onClick={() => setSelectedAlertForDrawer(null)}>
-          <div
-            className="drawer-panel animate-slide-right"
-            onClick={(e) => e.stopPropagation()}
-            style={{ padding: '1.8rem 1.6rem' }}
-          >
-            {/* Drawer Header */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                paddingBottom: '1.2rem',
-                borderBottom: '1px solid var(--border-light)',
-              }}
-            >
-              <div>
-                <span
-                  style={{
-                    fontSize: '0.72rem',
-                    textTransform: 'uppercase',
-                    color: '#5eead4',
-                    fontWeight: 700,
-                    letterSpacing: '0.08em',
-                  }}
-                >
-                  Event #{selectedAlertForDrawer.id}
-                </span>
-                <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#fff', marginTop: '0.2rem' }}>
-                  {selectedAlertForDrawer.plain_status}
-                </h3>
-              </div>
-              <button
-                onClick={() => setSelectedAlertForDrawer(null)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: 'var(--text-muted)',
-                  cursor: 'pointer',
-                  padding: 4,
-                }}
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Event Telemetry & Overview */}
-            <div style={{ marginTop: '1.4rem', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-              <div
-                style={{
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  borderRadius: '14px',
-                  padding: '1rem 1.2rem',
-                  border: '1px solid var(--border-light)',
-                }}
-              >
-                <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>Resident & Room</div>
-                <div style={{ fontSize: '1rem', fontWeight: 700, color: '#fff', marginTop: '0.15rem' }}>
-                  {selectedAlertForDrawer.subject} · {selectedAlertForDrawer.room}
-                </div>
-                <div style={{ fontSize: '0.78rem', color: 'var(--text-subtle)', marginTop: '0.35rem' }}>
-                  Timestamp: {selectedAlertForDrawer.date_formatted} at {selectedAlertForDrawer.exact_time}
-                </div>
-              </div>
-
-              {/* Confidence Gauge */}
-              <div
-                style={{
-                  background: 'rgba(255, 255, 255, 0.04)',
-                  borderRadius: '14px',
-                  padding: '1rem 1.2rem',
-                  border: '1px solid var(--border-light)',
-                }}
-              >
-                <div
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    fontSize: '0.82rem',
-                    marginBottom: '0.5rem',
-                  }}
-                >
-                  <span style={{ color: 'var(--text-muted)' }}>Detection Confidence</span>
-                  <span style={{ fontWeight: 700, color: '#5eead4' }}>
-                    {selectedAlertForDrawer.confidence_pct}%
-                  </span>
-                </div>
-                <div
-                  style={{
-                    width: '100%',
-                    height: 8,
-                    background: 'rgba(255, 255, 255, 0.1)',
-                    borderRadius: 999,
-                    overflow: 'hidden',
-                  }}
-                >
-                  <div
-                    style={{
-                      width: `${selectedAlertForDrawer.confidence_pct}%`,
-                      height: '100%',
-                      background: 'linear-gradient(90deg, #10b981, #14b8a6, #f43f5e)',
-                      borderRadius: 999,
-                    }}
-                  />
-                </div>
-              </div>
-
-              {/* Kinematics Telemetry */}
-              {selectedAlertForDrawer.pose_telemetry && (
-                <div
-                  style={{
-                    background: 'rgba(255, 255, 255, 0.04)',
-                    borderRadius: '14px',
-                    padding: '1rem 1.2rem',
-                    border: '1px solid var(--border-light)',
-                  }}
-                >
-                  <div
-                    style={{
-                      fontSize: '0.82rem',
-                      fontWeight: 700,
-                      color: '#e2e8f0',
-                      marginBottom: '0.6rem',
-                    }}
-                  >
-                    AI Kinematics Analysis
-                  </div>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.6rem' }}>
-                    <div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Torso Angle</div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#fff' }}>
-                        {selectedAlertForDrawer.pose_telemetry.torso_angle_deg}° from vertical
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>Impact Velocity</div>
-                      <div style={{ fontSize: '0.92rem', fontWeight: 700, color: '#fff' }}>
-                        {selectedAlertForDrawer.pose_telemetry.fall_velocity} m/s
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Editable Caregiver Notes */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.4rem' }}>
-                <label
-                  style={{
-                    fontSize: '0.82rem',
-                    fontWeight: 700,
-                    color: '#e2e8f0',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.4rem',
-                  }}
-                >
-                  <FileText size={15} color="#5eead4" />
-                  <span>Caregiver Notes & Follow-up</span>
-                </label>
-                <textarea
-                  value={drawerNoteText}
-                  onChange={(e) => setDrawerNoteText(e.target.value)}
-                  placeholder="Record observations, checks performed, or follow-up needed for Eleanor..."
-                  rows={4}
-                  style={{
-                    width: '100%',
-                    background: 'rgba(255, 255, 255, 0.05)',
-                    border: '1px solid var(--border-light)',
-                    borderRadius: '12px',
-                    padding: '0.75rem',
-                    color: '#fff',
-                    fontFamily: 'inherit',
-                    fontSize: '0.85rem',
-                    outline: 'none',
-                    resize: 'vertical',
-                  }}
-                />
-                <button
-                  onClick={handleSaveDrawerNote}
-                  className="action-btn btn-attending"
-                  style={{ padding: '0.6rem 1rem', fontSize: '0.85rem', alignSelf: 'flex-start' }}
-                >
-                  <span>Save Note</span>
-                </button>
-              </div>
-
-              {/* Quick Actions inside Drawer */}
-              <div
-                style={{
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: '0.6rem',
-                  marginTop: '1.2rem',
-                  paddingTop: '1rem',
-                  borderTop: '1px solid var(--border-light)',
-                }}
-              >
-                <button
-                  onClick={() => {
-                    handleAction('acknowledge');
-                    setSelectedAlertForDrawer(null);
-                  }}
-                  className="action-btn btn-attending"
-                  style={{ width: '100%' }}
-                >
-                  <CheckCircle2 size={16} />
-                  <span>Mark as Attended</span>
-                </button>
-                <button
-                  onClick={() => {
-                    handleAction('dismiss');
-                    setSelectedAlertForDrawer(null);
-                  }}
-                  className="action-btn btn-secondary-quiet"
-                  style={{ width: '100%' }}
-                >
-                  <XCircle size={16} />
-                  <span>Mark as False Alarm</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ─── Interactive Snapshot Preview Modal ────────────────────────────── */}
       {snapshotModalUrl && (
