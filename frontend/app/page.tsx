@@ -35,12 +35,10 @@ import {
   fetchAlerts,
   takeAlertAction,
   switchCameraSource,
-  fetchSummary,
   saveAlertNote,
   setLocalSimulationStatus,
   SystemStatus,
   AlertItem,
-  SummaryMetrics,
 } from '@/lib/api';
 import { playSound } from '@/lib/sound';
 
@@ -58,15 +56,6 @@ export default function CaregiverHomePage() {
   });
 
   const [alerts, setAlerts] = useState<AlertItem[]>([]);
-  const [summary, setSummary] = useState<SummaryMetrics>({
-    streak_days: 18,
-    falls_today: 0,
-    routine_checks_today: 4,
-    avg_response_sec: 38,
-    last_routine_check: '10m ago',
-    system_health: 'Optimal · 15 FPS',
-    privacy_mode: 'Secured Local-Only',
-  });
 
   // UI Interactive States
   const [privacyLevel, setPrivacyLevel] = useState<number>(0); // 0 = clear, 1 = frosted, 2 = silhouette
@@ -92,15 +81,13 @@ export default function CaregiverHomePage() {
 
     async function loadData() {
       if (isSimulatingGrace) return; // don't overwrite during interactive simulation
-      const [st, al, sm] = await Promise.all([
+      const [st, al] = await Promise.all([
         fetchStatus(),
         fetchAlerts(),
-        fetchSummary(),
       ]);
       if (isMounted) {
         setStatus(st);
         setAlerts(al.slice(0, 5));
-        setSummary(sm);
       }
     }
 
@@ -274,12 +261,6 @@ export default function CaregiverHomePage() {
     playSound('chime');
     setPingPulsing(true);
     setTimeout(() => setPingPulsing(false), 2400);
-
-    setSummary((prev) => ({
-      ...prev,
-      routine_checks_today: prev.routine_checks_today + 1,
-      last_routine_check: 'Just now',
-    }));
 
     triggerToast("🔊 Voice Check-in pinged Eleanor's Room 102 console: 'Checking in on you, Mom!'");
   };
@@ -911,58 +892,8 @@ export default function CaregiverHomePage() {
           </div>
         </div>
 
-        {/* Right Column: Daily Peace-of-Mind Stats & Interactive Activity Log */}
+        {/* Right Column: Daily Stats & Interactive Activity Log */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '1.4rem' }}>
-          {/* Peace of Mind Grid */}
-          <div className="glass-panel" style={{ padding: '1.4rem' }}>
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                marginBottom: '1rem',
-              }}
-            >
-              <h2
-                style={{
-                  fontFamily: 'var(--font-display)',
-                  fontSize: '1.15rem',
-                  fontWeight: 700,
-                  color: '#fff',
-                }}
-              >
-                Peace-of-Mind Summary
-              </h2>
-              <span style={{ fontSize: '0.78rem', color: '#10b981', fontWeight: 600 }}>
-                ● Active Protection
-              </span>
-            </div>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.85rem' }}>
-              <div className="stat-pill">
-                <div className="stat-val" style={{ color: '#10b981' }}>
-                  {summary.streak_days} Days
-                </div>
-                <div className="stat-desc">Incident-Free Streak</div>
-              </div>
-              <div className="stat-pill">
-                <div className="stat-val" style={{ color: '#38bdf8' }}>
-                  {summary.avg_response_sec}s
-                </div>
-                <div className="stat-desc">Avg Response Time</div>
-              </div>
-              <div className="stat-pill">
-                <div className="stat-val">{summary.routine_checks_today}</div>
-                <div className="stat-desc">Routine Checks Today</div>
-              </div>
-              <div className="stat-pill">
-                <div className="stat-val" style={{ color: '#a78bfa' }}>
-                  Optimal
-                </div>
-                <div className="stat-desc">Local AI Sensor Health</div>
-              </div>
-            </div>
-          </div>
-
           {/* Recent Events Interactive Snippet */}
           <div className="glass-panel" style={{ padding: '1.4rem', flex: 1 }}>
             <div

@@ -19,6 +19,7 @@ import {
   Copy,
   ExternalLink,
   LogOut,
+  BarChart3,
 } from 'lucide-react';
 import { isSoundEnabled, setSoundEnabled, playSound } from '@/lib/sound';
 
@@ -426,6 +427,17 @@ export default function InteractiveNavbar() {
               >
                 <History size={16} />
                 <span>Care Log</span>
+              </Link>
+              <Link
+                href="/analytics"
+                className={`nav-btn ${pathname === '/analytics' ? 'active' : ''}`}
+                onClick={() => {
+                  playSound('click');
+                  closeSidebar();
+                }}
+              >
+                <BarChart3 size={16} />
+                <span>Analytics</span>
               </Link>
               <Link
                 href="/contacts"
