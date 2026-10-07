@@ -178,33 +178,6 @@ export default function InteractiveNavbar() {
             >
               <Command size={15} />
             </button>
-
-            {/* Privacy Status Badge */}
-            <div
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.45rem',
-                padding: '0.35rem 0.8rem',
-                background: 'rgba(16, 185, 129, 0.1)',
-                border: '1px solid rgba(16, 185, 129, 0.25)',
-                borderRadius: '999px',
-                fontSize: '0.78rem',
-                fontWeight: 600,
-                color: '#34d399',
-              }}
-            >
-              <span
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: '50%',
-                  background: '#10b981',
-                  display: 'inline-block',
-                }}
-              />
-              Private & Local
-            </div>
           </div>
         </div>
       </header>
