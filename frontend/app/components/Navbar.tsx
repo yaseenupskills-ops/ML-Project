@@ -12,6 +12,7 @@ import {
   VolumeX,
   PhoneCall,
   Command,
+  Menu,
   ChevronDown,
   X,
   Check,
@@ -25,6 +26,7 @@ export default function InteractiveNavbar() {
   const [soundOn, setSoundOn] = useState(true);
   const [showSpeedDial, setShowSpeedDial] = useState(false);
   const [showShortcuts, setShowShortcuts] = useState(false);
+  const [showSidebar, setShowSidebar] = useState(false);
   const [showResidentMenu, setShowResidentMenu] = useState(false);
   const [selectedResident, setSelectedResident] = useState({
     name: 'Eleanor Vance',
@@ -36,6 +38,30 @@ export default function InteractiveNavbar() {
   useEffect(() => {
     setSoundOn(isSoundEnabled());
   }, []);
+
+  const closeSidebar = () => {
+    setShowSidebar(false);
+    setShowResidentMenu(false);
+  };
+
+  // Close the slide bar on navigation
+  useEffect(() => {
+    setShowSidebar(false);
+    setShowResidentMenu(false);
+  }, [pathname]);
+
+  // Close the slide bar on Escape
+  useEffect(() => {
+    if (!showSidebar) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowSidebar(false);
+        setShowResidentMenu(false);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showSidebar]);
 
   const handleToggleSound = () => {
     const next = !soundOn;
@@ -58,6 +84,19 @@ export default function InteractiveNavbar() {
       <header className="navbar">
         <div className="nav-container">
           <div style={{ display: 'flex', alignItems: 'center', gap: '1.25rem' }}>
+            {/* Slide-in Sidebar Toggle */}
+            <button
+              onClick={() => {
+                setShowSidebar(true);
+                playSound('click');
+              }}
+              className="hud-control-btn"
+              title="Open navigation slide bar"
+              style={{ padding: '0.45rem 0.6rem' }}
+            >
+              <Menu size={16} />
+            </button>
+
             <Link href="/" className="brand">
               <div className="brand-icon">
                 <ShieldCheck size={22} />
@@ -78,132 +117,7 @@ export default function InteractiveNavbar() {
               </div>
             </Link>
 
-            {/* Interactive Resident Switcher */}
-            <div style={{ position: 'relative' }}>
-              <button
-                onClick={() => {
-                  setShowResidentMenu(!showResidentMenu);
-                  playSound('click');
-                }}
-                className="resident-badge"
-                style={{ cursor: 'pointer', border: '1px solid rgba(255, 255, 255, 0.12)' }}
-                title="Click to switch resident monitor"
-              >
-                <div className="resident-avatar">{selectedResident.initials}</div>
-                <span style={{ color: '#f8fafc', fontWeight: 600 }}>{selectedResident.name}</span>
-                <span style={{ color: 'var(--text-subtle)' }}>·</span>
-                <span style={{ color: '#5eead4' }}>{selectedResident.room}</span>
-                <ChevronDown size={14} style={{ marginLeft: 2, color: 'var(--text-subtle)' }} />
-              </button>
-
-              {showResidentMenu && (
-                <div
-                  className="animate-scale-up"
-                  style={{
-                    position: 'absolute',
-                    top: 'calc(100% + 8px)',
-                    left: 0,
-                    width: 290,
-                    background: '#0f172a',
-                    border: '1px solid rgba(255, 255, 255, 0.15)',
-                    borderRadius: '16px',
-                    boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
-                    padding: '0.5rem',
-                    zIndex: 100,
-                  }}
-                >
-                  <div
-                    style={{
-                      padding: '0.5rem 0.75rem',
-                      fontSize: '0.72rem',
-                      color: 'var(--text-subtle)',
-                      textTransform: 'uppercase',
-                      fontWeight: 700,
-                      letterSpacing: '0.05em',
-                    }}
-                  >
-                    Select Resident
-                  </div>
-                  {[
-                    { name: 'Eleanor Vance', room: 'Room 102 (Living Area)', initials: 'EV' },
-                    { name: 'Eleanor Vance', room: 'Room 102 (Bedroom)', initials: 'EV' },
-                    { name: 'Arthur Vance', room: 'Room 105 (Studio)', initials: 'AV' },
-                  ].map((r, i) => (
-                    <button
-                      key={i}
-                      onClick={() => {
-                        setSelectedResident(r);
-                        setShowResidentMenu(false);
-                        playSound('ping');
-                      }}
-                      style={{
-                        width: '100%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between',
-                        padding: '0.65rem 0.8rem',
-                        borderRadius: '10px',
-                        background:
-                          selectedResident.room === r.room ? 'rgba(20, 184, 166, 0.15)' : 'transparent',
-                        color: '#fff',
-                        border: 'none',
-                        cursor: 'pointer',
-                        textAlign: 'left',
-                      }}
-                    >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                        <div
-                          className="resident-avatar"
-                          style={{
-                            background:
-                              r.initials === 'EV'
-                                ? 'linear-gradient(135deg, #10b981, #0d9488)'
-                                : '#6366f1',
-                          }}
-                        >
-                          {r.initials}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.86rem', fontWeight: 600 }}>{r.name}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            {r.room}
-                          </div>
-                        </div>
-                      </div>
-                      {selectedResident.room === r.room && <Check size={16} color="#5eead4" />}
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
           </div>
-
-          <nav className="nav-links">
-            <Link
-              href="/"
-              className={`nav-btn ${pathname === '/' ? 'active' : ''}`}
-              onClick={() => playSound('click')}
-            >
-              <Heart size={16} />
-              <span>Home & Live</span>
-            </Link>
-            <Link
-              href="/history"
-              className={`nav-btn ${pathname === '/history' ? 'active' : ''}`}
-              onClick={() => playSound('click')}
-            >
-              <History size={16} />
-              <span>Care Log</span>
-            </Link>
-            <Link
-              href="/contacts"
-              className={`nav-btn ${pathname === '/contacts' ? 'active' : ''}`}
-              onClick={() => playSound('click')}
-            >
-              <Users size={16} />
-              <span>Care Team</span>
-            </Link>
-          </nav>
 
           {/* Interactive Tool Actions */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
@@ -294,6 +208,190 @@ export default function InteractiveNavbar() {
           </div>
         </div>
       </header>
+
+      {/* ─── Slide-in Navigation Sidebar ─────────────────────────────── */}
+      {showSidebar && (
+        <div className="sidebar-overlay" onClick={closeSidebar}>
+          <aside
+            className="sidebar-panel animate-slide-left"
+            onClick={(e) => e.stopPropagation()}
+            aria-label="Navigation menu"
+          >
+            {/* Panel Header */}
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                <ShieldCheck size={18} color="#5eead4" />
+                <span style={{ fontWeight: 700, fontSize: '1rem', color: '#fff' }}>
+                  Navigation
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  closeSidebar();
+                  playSound('click');
+                }}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  color: 'var(--text-muted)',
+                  cursor: 'pointer',
+                  padding: 4,
+                }}
+                title="Close navigation"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Interactive Resident Switcher */}
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => {
+                  setShowResidentMenu(!showResidentMenu);
+                  playSound('click');
+                }}
+                className="resident-badge"
+                style={{
+                  cursor: 'pointer',
+                  border: '1px solid rgba(255, 255, 255, 0.12)',
+                  maxWidth: '100%',
+                  flexWrap: 'wrap',
+                }}
+                title="Click to switch resident monitor"
+              >
+                <div className="resident-avatar">{selectedResident.initials}</div>
+                <span style={{ color: '#f8fafc', fontWeight: 600 }}>{selectedResident.name}</span>
+                <span style={{ color: 'var(--text-subtle)' }}>·</span>
+                <span style={{ color: '#5eead4' }}>{selectedResident.room}</span>
+                <ChevronDown size={14} style={{ marginLeft: 2, color: 'var(--text-subtle)' }} />
+              </button>
+
+              {showResidentMenu && (
+                <div
+                  className="animate-scale-up"
+                  style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    left: 0,
+                    width: 260,
+                    background: '#0f172a',
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '16px',
+                    boxShadow: '0 20px 40px rgba(0,0,0,0.6)',
+                    padding: '0.5rem',
+                    zIndex: 100,
+                  }}
+                >
+                  <div
+                    style={{
+                      padding: '0.5rem 0.75rem',
+                      fontSize: '0.72rem',
+                      color: 'var(--text-subtle)',
+                      textTransform: 'uppercase',
+                      fontWeight: 700,
+                      letterSpacing: '0.05em',
+                    }}
+                  >
+                    Select Resident
+                  </div>
+                  {[
+                    { name: 'Eleanor Vance', room: 'Room 102 (Living Area)', initials: 'EV' },
+                    { name: 'Eleanor Vance', room: 'Room 102 (Bedroom)', initials: 'EV' },
+                    { name: 'Arthur Vance', room: 'Room 105 (Studio)', initials: 'AV' },
+                  ].map((r, i) => (
+                    <button
+                      key={i}
+                      onClick={() => {
+                        setSelectedResident(r);
+                        setShowResidentMenu(false);
+                        playSound('ping');
+                      }}
+                      style={{
+                        width: '100%',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0.65rem 0.8rem',
+                        borderRadius: '10px',
+                        background:
+                          selectedResident.room === r.room ? 'rgba(20, 184, 166, 0.15)' : 'transparent',
+                        color: '#fff',
+                        border: 'none',
+                        cursor: 'pointer',
+                        textAlign: 'left',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                        <div
+                          className="resident-avatar"
+                          style={{
+                            background:
+                              r.initials === 'EV'
+                                ? 'linear-gradient(135deg, #10b981, #0d9488)'
+                                : '#6366f1',
+                          }}
+                        >
+                          {r.initials}
+                        </div>
+                        <div>
+                          <div style={{ fontSize: '0.86rem', fontWeight: 600 }}>{r.name}</div>
+                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                            {r.room}
+                          </div>
+                        </div>
+                      </div>
+                      {selectedResident.room === r.room && <Check size={16} color="#5eead4" />}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Primary Navigation */}
+            <nav className="nav-links sidebar-links">
+              <Link
+                href="/"
+                className={`nav-btn ${pathname === '/' ? 'active' : ''}`}
+                onClick={() => {
+                  playSound('click');
+                  closeSidebar();
+                }}
+              >
+                <Heart size={16} />
+                <span>Home & Live</span>
+              </Link>
+              <Link
+                href="/history"
+                className={`nav-btn ${pathname === '/history' ? 'active' : ''}`}
+                onClick={() => {
+                  playSound('click');
+                  closeSidebar();
+                }}
+              >
+                <History size={16} />
+                <span>Care Log</span>
+              </Link>
+              <Link
+                href="/contacts"
+                className={`nav-btn ${pathname === '/contacts' ? 'active' : ''}`}
+                onClick={() => {
+                  playSound('click');
+                  closeSidebar();
+                }}
+              >
+                <Users size={16} />
+                <span>Care Team</span>
+              </Link>
+            </nav>
+          </aside>
+        </div>
+      )}
 
       {/* Speed Dial Modal */}
       {showSpeedDial && (
