@@ -326,7 +326,17 @@ export default function HistoryPage() {
           </p>
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem' }}>
+        <div
+          className="internal-scroll"
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '0.85rem',
+            maxHeight: 'calc(100vh - 440px)',
+            minHeight: 220,
+            paddingRight: '0.3rem',
+          }}
+        >
           {filteredAlerts.map((item) => (
             <div
               key={item.id}
