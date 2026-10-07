@@ -71,7 +71,6 @@ export default function CaregiverHomePage() {
   // UI Interactive States
   const [privacyLevel, setPrivacyLevel] = useState<number>(0); // 0 = clear, 1 = frosted, 2 = silhouette
   const [zoomLevel, setZoomLevel] = useState<number>(1); // 1, 1.25, 1.5
-  const [showSkeletonRig, setShowSkeletonRig] = useState<boolean>(true);
   const [theaterMode, setTheaterMode] = useState<boolean>(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [switchingSource, setSwitchingSource] = useState(false);
@@ -654,19 +653,6 @@ export default function CaregiverHomePage() {
                   <span>Snapshot</span>
                 </button>
 
-                {/* AI Rig Skeleton Visualizer Toggle */}
-                <button
-                  onClick={() => {
-                    setShowSkeletonRig(!showSkeletonRig);
-                    playSound('click');
-                  }}
-                  className={`hud-control-btn ${showSkeletonRig ? 'active' : ''}`}
-                  title="Toggle AI Pose Skeleton Rig"
-                >
-                  <Activity size={14} />
-                  <span>AI Rig {showSkeletonRig ? 'ON' : 'OFF'}</span>
-                </button>
-
                 {/* Digital Zoom Cycle */}
                 <button
                   onClick={() => {
@@ -777,58 +763,6 @@ export default function CaregiverHomePage() {
                   }, 1200);
                 }}
               />
-
-              {/* Simulated Skeleton Rig Overlay */}
-              {showSkeletonRig && (
-                <svg
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
-                    pointerEvents: 'none',
-                    zIndex: 5,
-                  }}
-                  viewBox="0 0 640 360"
-                >
-                  {isGrace || isAlert ? (
-                    // Fallen posture skeleton (horizontal torso on floor)
-                    <g opacity="0.85">
-                      <circle cx="210" cy="275" r="9" fill="#f43f5e" />
-                      <line x1="210" y1="275" x2="270" y2="285" stroke="#f43f5e" strokeWidth="4" />
-                      <line x1="270" y1="285" x2="360" y2="290" stroke="#f43f5e" strokeWidth="4" />
-                      <line x1="360" y1="290" x2="430" y2="295" stroke="#f43f5e" strokeWidth="3" />
-                      <circle cx="270" cy="285" r="6" fill="#fb7185" />
-                      <circle cx="360" cy="290" r="6" fill="#fb7185" />
-                      <circle cx="430" cy="295" r="5" fill="#fb7185" />
-                      {/* Floor plane warning marker */}
-                      <rect
-                        x="180"
-                        y="305"
-                        width="280"
-                        height="3"
-                        fill="#f43f5e"
-                        strokeDasharray="6 4"
-                      />
-                    </g>
-                  ) : (
-                    // Upright / Safe gentle sitting/standing posture skeleton
-                    <g opacity="0.8">
-                      <circle cx="320" cy="115" r="8" fill="#10b981" />
-                      <line x1="320" y1="123" x2="320" y2="190" stroke="#10b981" strokeWidth="3.5" />
-                      <line x1="285" y1="145" x2="355" y2="145" stroke="#10b981" strokeWidth="3" />
-                      <line x1="285" y1="145" x2="275" y2="195" stroke="#10b981" strokeWidth="2.5" />
-                      <line x1="355" y1="145" x2="365" y2="195" stroke="#10b981" strokeWidth="2.5" />
-                      <line x1="320" y1="190" x2="305" y2="265" stroke="#10b981" strokeWidth="3" />
-                      <line x1="320" y1="190" x2="335" y2="265" stroke="#10b981" strokeWidth="3" />
-                      <circle cx="285" cy="145" r="5" fill="#34d399" />
-                      <circle cx="355" cy="145" r="5" fill="#34d399" />
-                      <circle cx="305" cy="265" r="5" fill="#34d399" />
-                      <circle cx="335" cy="265" r="5" fill="#34d399" />
-                    </g>
-                  )}
-                </svg>
-              )}
 
               {/* Privacy Shield Info Overlay */}
               {privacyLevel > 0 && (
