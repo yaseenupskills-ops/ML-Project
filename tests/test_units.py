@@ -5,9 +5,11 @@ import unittest
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from alert_store import AlertStore
 from decision_logic import DecisionLogic, majority_vote_probabilities
+from evaluate_video_split import split_by_video
 from features import FeatureEngineer
 from grace_period import GracePeriodManager, simulate_grace_period
 from pose_extraction import PoseExtractor
@@ -174,6 +176,51 @@ class TestCareStores(unittest.TestCase):
                 store.update({"email_alerts": "yes"})
             # Unknown keys are ignored rather than persisted.
             self.assertNotIn("bogus", store.update({"bogus": 1}))
+
+
+class TestVideoSplit(unittest.TestCase):
+    """The 80/20 evaluation split must be grouped by whole video."""
+
+    @staticmethod
+    def _frame():
+        rows = []
+        for label, prefix, count in ((0, "adl", 40), (1, "fall", 30)):
+            for i in range(1, count + 1):
+                for window in range(3):
+                    rows.append(
+                        {
+                            "clip_id": f"{prefix}-{i:02d}",
+                            "label": label,
+                            "window_start": window,
+                        }
+                    )
+        return pd.DataFrame(rows)
+
+    def test_split_is_grouped_stratified_and_complete(self):
+        df = self._frame()
+        train_df, test_df, train_ids, test_ids = split_by_video(df)
+
+        # No video can appear in both splits (leakage is fatal).
+        self.assertEqual(set(train_ids) & set(test_ids), set())
+        # Every video lands in exactly one split.
+        self.assertEqual(set(train_ids) | set(test_ids), set(df["clip_id"]))
+        # 80/20 stratified: 40 ADL -> 32/8, 30 falls -> 24/6.
+        self.assertEqual(len(train_ids), 56)
+        self.assertEqual(len(test_ids), 14)
+        self.assertEqual(
+            test_df["clip_id"].nunique(), 14
+        )
+        self.assertEqual(set(test_df["label"]), {0, 1})
+        self.assertEqual(set(train_df["label"]), {0, 1})
+        # All windows are accounted for.
+        self.assertEqual(len(train_df) + len(test_df), len(df))
+
+    def test_split_is_deterministic(self):
+        df = self._frame()
+        first = split_by_video(df)
+        second = split_by_video(df)
+        self.assertEqual(first[2], second[2])
+        self.assertEqual(first[3], second[3])
 
 
 if __name__ == "__main__":

@@ -1,0 +1,59 @@
+FallGuard Care - Random Forest Evaluation (held-out video split)
+================================================================
+Generated: 2026-10-08 00:39:06
+Dataset: UR Fall Detection Dataset (UR Fall), cam0, deduplicated
+Label: video-level (fall-* = fall, adl-* = no fall)
+
+Feature config
+----------------------------------------------------------------
+  window: 0.7s x 30 fps = 21 frames, overlap 50% (step 10 frames)
+  features per window: 15
+  source: cached keypoints (data/processed/keypoints/URFD/*.npy)
+  clips skipped (too short): none
+
+Split (by whole video, stratified, random_state=42)
+----------------------------------------------------------------
+  train: 56 videos -> 270 windows (63 fall / 207 no-fall)
+  test:  14 videos -> 67 windows (18 fall / 49 no-fall)
+  test videos: adl-08, adl-11, adl-15, adl-19, adl-21, adl-23, adl-29, adl-39, fall-04, fall-07, fall-09, fall-14, fall-18, fall-25
+  leakage check: no video appears in both splits
+
+Window-level results on 67 held-out windows
+----------------------------------------------------------------
+  Accuracy:  0.8060
+  Precision: 0.6923
+  Recall:    0.5000
+  F1 score:  0.5806
+
+Confusion matrix (counts)
+----------------------------------------------------------------
+  True positives  (TP):    9   False positives (FP):    4
+  True negatives  (TN):   45   False negatives (FN):    9
+
+Video-level results (14 test videos, mean window probability >= 0.5)
+----------------------------------------------------------------
+  Accuracy: 0.8571 (12/14 videos correct)
+
+  video        true   pred    windows  fall prob
+  adl-08       no-fall no-fall        6      0.197
+  adl-11       no-fall no-fall       12      0.149
+  adl-15       no-fall no-fall        8      0.151
+  adl-19       no-fall no-fall        4      0.296
+  adl-21       no-fall no-fall        5      0.146
+  adl-23       no-fall no-fall        3      0.213
+  adl-29       no-fall no-fall        5      0.359
+  adl-39       no-fall no-fall        6      0.227
+  fall-04      fall   fall          2      0.969
+  fall-07      fall   no-fall        5      0.484
+  fall-09      fall   no-fall        6      0.370
+  fall-14      fall   fall          2      0.840
+  fall-18      fall   fall          1      0.973
+  fall-25      fall   fall          2      0.802
+
+Top feature importances
+----------------------------------------------------------------
+  velocity_magnitude               0.1330
+  stillness_post                   0.1111
+  keypoint_dispersion_mean         0.0949
+  velocity_max                     0.0860
+  motion_energy                    0.0845
