@@ -294,32 +294,78 @@ const DEFAULT_CONTACTS: ContactItem[] = [
   },
 ];
 
-let localContacts: ContactItem[] = [...DEFAULT_CONTACTS];
-
 export async function fetchContacts(): Promise<ContactItem[]> {
   try {
     const res = await fetch(`${API_BASE}/api/contacts`, { cache: 'no-store' });
     if (res.ok) {
       const data = await res.json();
-      if (data && data.length > 0) return data;
+      if (Array.isArray(data)) return data;
     }
   } catch (err) {
-    // return local
+    // backend offline: fall back to seed data
   }
-  return localContacts;
+  return DEFAULT_CONTACTS;
 }
 
-export function addLocalContact(contact: Omit<ContactItem, 'id'>): ContactItem {
-  const newContact: ContactItem = {
-    ...contact,
-    id: `c-${Date.now()}`,
-  };
-  localContacts = [newContact, ...localContacts];
-  return newContact;
+async function throwFromResponse(res: Response, fallback: string): Promise<never> {
+  let detail = '';
+  try {
+    const body = await res.json();
+    detail = typeof body?.detail === 'string' ? body.detail : '';
+  } catch {
+    // non-JSON error body
+  }
+  if (res.status === 403) {
+    throw new Error(detail || 'Admin privileges required');
+  }
+  throw new Error(detail || fallback);
 }
 
-export function deleteLocalContact(id: string): void {
-  localContacts = localContacts.filter((c) => c.id !== id);
+/** Add a contact on the backend (admin only; 403 for other roles). */
+export async function createContact(contact: Omit<ContactItem, 'id'>): Promise<ContactItem> {
+  const res = await fetch(`${API_BASE}/api/contacts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(contact),
+  });
+  if (!res.ok) await throwFromResponse(res, 'Failed to add contact');
+  return (await res.json()) as ContactItem;
+}
+
+/** Remove a contact on the backend (admin only; 403 for other roles). */
+export async function removeContact(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/contacts/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) await throwFromResponse(res, 'Failed to remove contact');
+}
+
+export interface AppSettings {
+  grace_period_sec: number;
+  chime_volume: number;
+  email_alerts: boolean;
+  sms_alerts: boolean;
+}
+
+export async function fetchSettings(): Promise<AppSettings | null> {
+  try {
+    const res = await fetch(`${API_BASE}/api/settings`, { cache: 'no-store' });
+    if (res.ok) return (await res.json()) as AppSettings;
+  } catch (err) {
+    // backend offline: keep defaults
+  }
+  return null;
+}
+
+/** Persist settings (admin only; 403 for other roles). Partial patches allowed. */
+export async function saveSettings(patch: Partial<AppSettings>): Promise<AppSettings> {
+  const res = await fetch(`${API_BASE}/api/settings`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) await throwFromResponse(res, 'Failed to save settings');
+  return (await res.json()) as AppSettings;
 }
 
 export async function fetchSummary(): Promise<SummaryMetrics> {

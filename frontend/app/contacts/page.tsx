@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import {
   Users,
@@ -19,11 +19,22 @@ import {
   Send,
   Volume2,
   X,
+  Lock,
 } from 'lucide-react';
-import { fetchContacts, addLocalContact, deleteLocalContact, ContactItem } from '@/lib/api';
+import {
+  fetchContacts,
+  createContact,
+  removeContact,
+  fetchSettings,
+  saveSettings,
+  AppSettings,
+  ContactItem,
+} from '@/lib/api';
+import { useSession } from '@/lib/session';
 import { playSound } from '@/lib/sound';
 
 export default function ContactsPage() {
+  const { isAdmin } = useSession();
   const [contacts, setContacts] = useState<ContactItem[]>([]);
   const [graceSec, setGraceSec] = useState(20);
   const [emailAlerts, setEmailAlerts] = useState(true);
@@ -45,11 +56,58 @@ export default function ContactsPage() {
 
   useEffect(() => {
     fetchContacts().then(setContacts);
+    fetchSettings().then((saved) => {
+      if (!saved) return;
+      setGraceSec(saved.grace_period_sec);
+      setEmailAlerts(saved.email_alerts);
+      setSmsAlerts(saved.sms_alerts);
+      setChimeVolume(saved.chime_volume);
+    });
   }, []);
 
   const triggerToast = (msg: string) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(null), 3000);
+  };
+
+  // Debounced settings persistence (admin only; merges rapid slider ticks
+  // into one POST so dragging the grace slider doesn't spam the API).
+  const pendingSettings = useRef<Partial<AppSettings>>({});
+  const pendingToast = useRef<string | undefined>(undefined);
+  const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const flushSettings = async () => {
+    const patch = pendingSettings.current;
+    const toast = pendingToast.current;
+    pendingSettings.current = {};
+    pendingToast.current = undefined;
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    if (Object.keys(patch).length === 0) return;
+    try {
+      await saveSettings(patch);
+      if (toast) triggerToast(toast);
+    } catch (err) {
+      playSound('warning');
+      triggerToast(err instanceof Error ? err.message : 'Failed to save settings');
+    }
+  };
+
+  const queueSettings = (
+    patch: Partial<AppSettings>,
+    opts: { immediate?: boolean; toast?: string } = {}
+  ) => {
+    if (!isAdmin) return;
+    pendingSettings.current = { ...pendingSettings.current, ...patch };
+    if (opts.toast) pendingToast.current = opts.toast;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (opts.immediate) {
+      void flushSettings();
+    } else {
+      saveTimer.current = setTimeout(() => void flushSettings(), 600);
+    }
   };
 
   const handleCopy = (id: string, text: string) => {
@@ -60,37 +118,47 @@ export default function ContactsPage() {
     setTimeout(() => setCopiedId(null), 2000);
   };
 
-  const handleAddContact = (e: React.FormEvent) => {
+  const handleAddContact = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName.trim() || !newPhone.trim()) {
       triggerToast('Please provide a name and phone number');
       return;
     }
 
-    const created = addLocalContact({
-      name: newName.trim(),
-      role: newRole.trim() || 'Care Team Member',
-      phone: newPhone.trim(),
-      email: newEmail.trim(),
-      is_primary: false,
-      badge: newBadge,
-    });
+    try {
+      const created = await createContact({
+        name: newName.trim(),
+        role: newRole.trim() || 'Care Team Member',
+        phone: newPhone.trim(),
+        email: newEmail.trim(),
+        is_primary: false,
+        badge: newBadge,
+      });
 
-    setContacts((prev) => [created, ...prev]);
-    setShowAddModal(false);
-    setNewName('');
-    setNewRole('');
-    setNewPhone('');
-    setNewEmail('');
-    playSound('ping');
-    triggerToast(`Added ${created.name} to Care Circle.`);
+      setContacts((prev) => [created, ...prev]);
+      setShowAddModal(false);
+      setNewName('');
+      setNewRole('');
+      setNewPhone('');
+      setNewEmail('');
+      playSound('ping');
+      triggerToast(`Added ${created.name} to Care Circle.`);
+    } catch (err) {
+      playSound('warning');
+      triggerToast(err instanceof Error ? err.message : 'Failed to add contact');
+    }
   };
 
-  const handleDelete = (id: string, name: string) => {
-    deleteLocalContact(id);
-    setContacts((prev) => prev.filter((c) => c.id !== id));
-    playSound('click');
-    triggerToast(`Removed ${name} from Care Circle.`);
+  const handleDelete = async (id: string, name: string) => {
+    try {
+      await removeContact(id);
+      setContacts((prev) => prev.filter((c) => c.id !== id));
+      playSound('click');
+      triggerToast(`Removed ${name} from Care Circle.`);
+    } catch (err) {
+      playSound('warning');
+      triggerToast(err instanceof Error ? err.message : 'Failed to remove contact');
+    }
   };
 
   const handleTestDispatch = () => {
@@ -182,15 +250,19 @@ export default function ContactsPage() {
               setShowAddModal(true);
               playSound('click');
             }}
+            disabled={!isAdmin}
+            title={isAdmin ? 'Add a care team member' : 'Only admins can add contacts'}
             className="hud-control-btn"
             style={{
               background: 'rgba(20, 184, 166, 0.18)',
               borderColor: 'rgba(20, 184, 166, 0.4)',
               color: '#5eead4',
               padding: '0.6rem 1rem',
+              opacity: isAdmin ? 1 : 0.45,
+              cursor: isAdmin ? 'pointer' : 'not-allowed',
             }}
           >
-            <UserPlus size={16} />
+            {isAdmin ? <UserPlus size={16} /> : <Lock size={16} color="#fbbf24" />}
             <span>Add Contact</span>
           </button>
 
@@ -261,14 +333,16 @@ export default function ContactsPage() {
         <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
           <button
             onClick={handleTestDispatch}
-            disabled={testingDispatch}
+            disabled={testingDispatch || !isAdmin}
             className="hud-control-btn"
             style={{
               background: 'rgba(255, 255, 255, 0.08)',
               padding: '0.85rem 1.2rem',
               color: '#fff',
+              opacity: isAdmin ? 1 : 0.45,
+              cursor: isAdmin ? 'pointer' : 'not-allowed',
             }}
-            title="Simulate SMS/Email dispatch"
+            title={isAdmin ? 'Simulate SMS/Email dispatch' : 'Only admins can run dispatch tests'}
           >
             <Send size={16} color="#fbbf24" />
             <span>{testingDispatch ? 'Testing Dispatch...' : '⚡ Test Dispatch Alert'}</span>
@@ -382,7 +456,7 @@ export default function ContactsPage() {
                     <span>Email</span>
                   </a>
                 )}
-                {!c.is_primary && c.id !== 'c4' && (
+                {isAdmin && !c.is_primary && c.id !== 'c4' && (
                   <button
                     onClick={() => handleDelete(c.id, c.name)}
                     className="hud-control-btn"
@@ -419,6 +493,28 @@ export default function ContactsPage() {
               >
                 Alert & Grace Period Settings
               </h2>
+              {!isAdmin && (
+                <span
+                  title="Only admins can change these settings"
+                  style={{
+                    marginLeft: 'auto',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.35rem',
+                    fontSize: '0.7rem',
+                    fontWeight: 700,
+                    letterSpacing: '0.06em',
+                    textTransform: 'uppercase',
+                    color: '#fbbf24',
+                    background: 'rgba(251, 191, 36, 0.12)',
+                    border: '1px solid rgba(251, 191, 36, 0.35)',
+                    padding: '0.25rem 0.6rem',
+                    borderRadius: '999px',
+                  }}
+                >
+                  <Lock size={12} /> Admin Only
+                </span>
+              )}
             </div>
 
             {/* Grace Period Slider */}
@@ -446,13 +542,24 @@ export default function ContactsPage() {
                 max="45"
                 step="5"
                 value={graceSec}
+                disabled={!isAdmin}
                 onChange={(e) => {
-                  setGraceSec(Number(e.target.value));
+                  const value = Number(e.target.value);
+                  setGraceSec(value);
                   playSound('click');
-                  triggerToast(`Grace period updated to ${e.target.value}s`);
+                  queueSettings(
+                    { grace_period_sec: value },
+                    { toast: `Grace period saved: ${value}s (applied to live detector)` }
+                  );
                 }}
                 className="interactive-slider"
+                style={{ cursor: isAdmin ? 'pointer' : 'not-allowed' }}
               />
+              {!isAdmin && (
+                <p style={{ fontSize: '0.75rem', color: 'var(--text-subtle)', marginTop: '0.5rem' }}>
+                  Read-only for your role — an admin is required to change the grace period.
+                </p>
+              )}
             </div>
 
             {/* Chime Volume */}
@@ -479,11 +586,14 @@ export default function ContactsPage() {
                 min="0"
                 max="100"
                 value={chimeVolume}
+                disabled={!isAdmin}
                 onChange={(e) => {
                   setChimeVolume(Number(e.target.value));
                   playSound('ping');
+                  queueSettings({ chime_volume: Number(e.target.value) });
                 }}
                 className="interactive-slider"
+                style={{ cursor: isAdmin ? 'pointer' : 'not-allowed' }}
               />
             </div>
 
@@ -511,10 +621,17 @@ export default function ContactsPage() {
                 <input
                   type="checkbox"
                   checked={smsAlerts}
+                  disabled={!isAdmin}
                   onChange={(e) => {
-                    setEmailAlerts(e.target.checked);
+                    setSmsAlerts(e.target.checked);
                     playSound('click');
-                    triggerToast(`SMS notifications ${e.target.checked ? 'enabled' : 'disabled'}`);
+                    queueSettings(
+                      { sms_alerts: e.target.checked },
+                      {
+                        immediate: true,
+                        toast: `SMS notifications ${e.target.checked ? 'enabled' : 'disabled'}`,
+                      }
+                    );
                   }}
                   style={{ width: 18, height: 18, accentColor: '#14b8a6', cursor: 'pointer' }}
                 />
@@ -542,10 +659,17 @@ export default function ContactsPage() {
                 <input
                   type="checkbox"
                   checked={emailAlerts}
+                  disabled={!isAdmin}
                   onChange={(e) => {
                     setEmailAlerts(e.target.checked);
                     playSound('click');
-                    triggerToast(`Email alerts ${e.target.checked ? 'enabled' : 'disabled'}`);
+                    queueSettings(
+                      { email_alerts: e.target.checked },
+                      {
+                        immediate: true,
+                        toast: `Email alerts ${e.target.checked ? 'enabled' : 'disabled'}`,
+                      }
+                    );
                   }}
                   style={{ width: 18, height: 18, accentColor: '#14b8a6', cursor: 'pointer' }}
                 />

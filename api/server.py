@@ -9,7 +9,6 @@ from __future__ import annotations
 import os
 import sys
 import time
-import json
 import hmac
 import hashlib
 import logging
@@ -29,6 +28,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from alert_store import AlertStore
 from alert import AlertManager
+from settings_store import ContactStore, SettingsStore
 from project_config import load_config, resolve_path
 import stream_server as ss
 from live_detection import get_live_detector, cancel_active_alert
@@ -44,6 +44,8 @@ app = FastAPI(
 
 ALERT_LOG = resolve_path("logs/alerts.jsonl", base=PROJECT_ROOT)
 store = AlertStore(ALERT_LOG)
+contacts_store = ContactStore(resolve_path("data/contacts.json", base=PROJECT_ROOT))
+settings_store = SettingsStore(resolve_path("data/runtime_settings.json", base=PROJECT_ROOT))
 config = load_config()
 
 
@@ -118,6 +120,19 @@ def _public_user(user: dict) -> dict:
         "display_name": user.get("display_name", user["username"]),
         "assigned_subjects": user.get("assigned_subjects", []),
     }
+
+
+def _require_admin(request: Request) -> None:
+    """Allow only admin users on mutating endpoints.
+
+    When auth is disabled (guest/dev mode) everything stays open.
+    The auth guard stores the validated profile on request.state.user.
+    """
+    if not get_auth_config().get("enabled", False):
+        return
+    user = getattr(request.state, "user", None)
+    if not user or user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Admin privileges required")
 
 
 class LoginRequest(BaseModel):
@@ -456,47 +471,92 @@ def get_snapshot():
     return Response(content=buffer.tobytes(), media_type="image/jpeg")
 
 
+class ContactCreateRequest(BaseModel):
+    name: str
+    phone: str
+    role: str = ""
+    email: str = ""
+    badge: str = ""
+    is_primary: bool = False
+
+
 @app.get("/api/contacts")
 def get_emergency_contacts():
     """Return emergency and care team contacts."""
-    return [
-        {
-            "id": "c1",
-            "name": "Sarah Miller",
-            "role": "Daughter / Primary Caregiver",
-            "phone": "(555) 234-5678",
-            "email": "sarah.miller@example.com",
-            "is_primary": True,
-            "badge": "On Duty",
-        },
-        {
-            "id": "c2",
-            "name": "Dr. Robert Chen",
-            "role": "Primary Care Physician",
-            "phone": "(555) 876-5432",
-            "email": "dr.chen@oakridgehealth.org",
-            "is_primary": False,
-            "badge": "Physician",
-        },
-        {
-            "id": "c3",
-            "name": "Oakridge Nursing Station",
-            "role": "On-Site Nurse Team",
-            "phone": "(555) 991-0022",
-            "email": "nursing@oakridgecare.com",
-            "is_primary": False,
-            "badge": "Facility",
-        },
-        {
-            "id": "c4",
-            "name": "Emergency Medical Services",
-            "role": "Local EMS / 911",
-            "phone": "911",
-            "email": "",
-            "is_primary": False,
-            "badge": "Emergency",
-        },
-    ]
+    return contacts_store.list()
+
+
+@app.post("/api/contacts")
+def create_contact(req: ContactCreateRequest, request: Request):
+    """Add a care-team contact (admin only)."""
+    _require_admin(request)
+    if not req.name.strip() or not req.phone.strip():
+        raise HTTPException(status_code=422, detail="name and phone are required")
+    return contacts_store.add(req.model_dump())
+
+
+@app.delete("/api/contacts/{contact_id}")
+def delete_contact(contact_id: str, request: Request):
+    """Remove a care-team contact (admin only)."""
+    _require_admin(request)
+    if not contacts_store.delete(contact_id):
+        raise HTTPException(status_code=404, detail="Contact not found")
+    return {"ok": True, "id": contact_id}
+
+
+class SettingsUpdateRequest(BaseModel):
+    grace_period_sec: Optional[int] = None
+    chime_volume: Optional[int] = None
+    email_alerts: Optional[bool] = None
+    sms_alerts: Optional[bool] = None
+
+
+def _apply_settings_live(settings: dict, patch: dict) -> None:
+    """Push persisted settings into the running detector (best effort)."""
+    try:
+        detector = get_live_detector()
+    except Exception as e:
+        logger.warning(f"Settings saved; detector unavailable so apply deferred to next start: {e}")
+        return
+    if "grace_period_sec" in patch:
+        try:
+            timeout = int(settings["grace_period_sec"])
+            detector.grace_manager.timeout_sec = timeout
+            detector.grace_timeout_sec = float(timeout)
+            logger.info(f"Grace period applied live: {timeout}s")
+        except Exception as e:
+            logger.warning(f"Failed to apply grace period live: {e}")
+    if "email_alerts" in patch or "sms_alerts" in patch:
+        try:
+            detector.alert_manager.email_enabled = bool(settings["email_alerts"])
+            detector.alert_manager.sms_enabled = bool(settings["sms_alerts"])
+            logger.info(
+                f"Alert channels applied live: email={settings['email_alerts']} "
+                f"sms={settings['sms_alerts']}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to apply alert channel toggles: {e}")
+
+
+@app.get("/api/settings")
+def get_settings():
+    """Return the persisted app settings."""
+    return settings_store.get()
+
+
+@app.post("/api/settings")
+def update_settings(req: SettingsUpdateRequest, request: Request):
+    """Update app settings (admin only); grace/channels apply live."""
+    _require_admin(request)
+    patch = {k: v for k, v in req.model_dump().items() if v is not None}
+    if not patch:
+        raise HTTPException(status_code=422, detail="No settings provided")
+    try:
+        saved = settings_store.update(patch)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    _apply_settings_live(saved, patch)
+    return saved
 
 
 @app.get("/api/summary")

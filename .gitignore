@@ -15,6 +15,10 @@ data/raw/
 # Processed data (keypoints, features — can be large)
 data/processed/
 
+# Runtime care settings & contacts (created by settings_store.py)
+data/contacts.json*
+data/runtime_settings.json*
+
 # Trained models
 models/*.joblib
 models/*.pt

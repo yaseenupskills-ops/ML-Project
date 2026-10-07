@@ -11,6 +11,12 @@ from decision_logic import DecisionLogic, majority_vote_probabilities
 from features import FeatureEngineer
 from grace_period import GracePeriodManager, simulate_grace_period
 from pose_extraction import PoseExtractor
+from settings_store import (
+    DEFAULT_CONTACTS,
+    DEFAULT_SETTINGS,
+    ContactStore,
+    SettingsStore,
+)
 
 
 class TestPoseExtractor(unittest.TestCase):
@@ -123,6 +129,51 @@ class TestAlertStore(unittest.TestCase):
             records = {record["id"]: record for record in store.read_all()}
             self.assertEqual(records[first]["status"], "acknowledged")
             self.assertEqual(records[second]["status"], "pending")
+
+
+class TestCareStores(unittest.TestCase):
+    def test_contact_store_seeds_adds_and_deletes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contacts.json"
+            store = ContactStore(path)
+            seeded = store.list()
+            self.assertEqual(len(seeded), len(DEFAULT_CONTACTS))
+            created = store.add({"name": "Neighbor Pat", "phone": "(555) 100-2000"})
+            # A fresh instance reads the persisted file (survives restarts).
+            self.assertEqual(len(ContactStore(path).list()), len(seeded) + 1)
+            self.assertTrue(ContactStore(path).delete(created["id"]))
+            self.assertFalse(ContactStore(path).delete(created["id"]))
+            self.assertEqual(len(ContactStore(path).list()), len(seeded))
+
+    def test_contact_store_keeps_empty_list_after_all_deleted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "contacts.json"
+            store = ContactStore(path)
+            for record in list(store.list()):
+                self.assertTrue(store.delete(record["id"]))
+            # An intentionally empty list must not re-seed the defaults.
+            self.assertEqual(ContactStore(path).list(), [])
+
+    def test_settings_store_persists_and_validates(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "settings.json"
+            store = SettingsStore(path)
+            self.assertEqual(store.get(), DEFAULT_SETTINGS)
+            saved = store.update({"grace_period_sec": 30, "email_alerts": False})
+            self.assertEqual(saved["grace_period_sec"], 30)
+            self.assertFalse(saved["email_alerts"])
+            # Values survive a fresh instance; defaults fill the gaps.
+            reloaded = SettingsStore(path).get()
+            self.assertEqual(reloaded["grace_period_sec"], 30)
+            self.assertEqual(reloaded["chime_volume"], DEFAULT_SETTINGS["chime_volume"])
+            with self.assertRaises(ValueError):
+                store.update({"grace_period_sec": 999})
+            with self.assertRaises(ValueError):
+                store.update({"chime_volume": "loud"})
+            with self.assertRaises(ValueError):
+                store.update({"email_alerts": "yes"})
+            # Unknown keys are ignored rather than persisted.
+            self.assertNotIn("bogus", store.update({"bogus": 1}))
 
 
 if __name__ == "__main__":

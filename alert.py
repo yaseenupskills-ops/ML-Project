@@ -78,6 +78,20 @@ class AlertManager:
             logger.info("SMS alerts configured (stretch goal)")
         else:
             logger.info("SMS alerts not configured")
+
+        # Runtime channel toggles from the admin settings store. Persisted
+        # values are loaded per-instance; POST /api/settings refreshes the
+        # running detector's instance live.
+        try:
+            from settings_store import SettingsStore
+            _settings = SettingsStore(
+                resolve_path("data/runtime_settings.json", base=config_file.parent)
+            ).get()
+            self.email_enabled = bool(_settings.get('email_alerts', True))
+            self.sms_enabled = bool(_settings.get('sms_alerts', True))
+        except Exception:
+            self.email_enabled = True
+            self.sms_enabled = True
     
     def _validate_email_config(self):
         """Validate email configuration."""
@@ -103,6 +117,10 @@ class AlertManager:
         Returns:
             True if email sent successfully, False otherwise
         """
+        if not getattr(self, 'email_enabled', True):
+            logger.info("Email alerts disabled via settings - skipping send")
+            return False
+
         # Check if email is configured
         if not self.email_config.get('sender') or not self.email_config.get('app_password'):
             logger.error("Email not configured - cannot send alert")
@@ -192,6 +210,10 @@ class AlertManager:
         Returns:
             True if SMS sent successfully, False otherwise
         """
+        if not getattr(self, 'sms_enabled', True):
+            logger.info("SMS alerts disabled via settings - skipping send")
+            return False
+
         if not TWILIO_AVAILABLE:
             logger.error("Twilio not available - SMS alerts disabled")
             self._log_alert(fall_event, grace_result, 'sms', False, delivery_status='sms_unavailable')
