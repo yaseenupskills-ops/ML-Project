@@ -28,11 +28,8 @@ export default function InteractiveNavbar() {
   const [showShortcuts, setShowShortcuts] = useState(false);
   const [showSidebar, setShowSidebar] = useState(false);
   const [showResidentMenu, setShowResidentMenu] = useState(false);
-  const [selectedResident, setSelectedResident] = useState({
-    name: 'Eleanor Vance',
-    room: 'Room 102 (Living Area)',
-    initials: 'EV',
-  });
+  const [selectedRoom, setSelectedRoom] = useState('Living Room');
+  const MONITORED_ROOMS = ['Living Room', 'Bedroom', 'Studio'];
   const [copiedNumber, setCopiedNumber] = useState<string | null>(null);
 
   useEffect(() => {
@@ -236,12 +233,9 @@ export default function InteractiveNavbar() {
                   maxWidth: '100%',
                   flexWrap: 'wrap',
                 }}
-                title="Click to switch resident monitor"
+                title="Click to switch monitored room"
               >
-                <div className="resident-avatar">{selectedResident.initials}</div>
-                <span style={{ color: '#f8fafc', fontWeight: 600 }}>{selectedResident.name}</span>
-                <span style={{ color: 'var(--text-subtle)' }}>·</span>
-                <span style={{ color: '#5eead4' }}>{selectedResident.room}</span>
+                <span style={{ color: '#f8fafc', fontWeight: 600 }}>{selectedRoom}</span>
                 <ChevronDown size={14} style={{ marginLeft: 2, color: 'var(--text-subtle)' }} />
               </button>
 
@@ -252,7 +246,7 @@ export default function InteractiveNavbar() {
                     position: 'absolute',
                     top: 'calc(100% + 8px)',
                     left: 0,
-                    width: 260,
+                    width: 200,
                     background: '#0f172a',
                     border: '1px solid rgba(255, 255, 255, 0.15)',
                     borderRadius: '16px',
@@ -261,27 +255,11 @@ export default function InteractiveNavbar() {
                     zIndex: 100,
                   }}
                 >
-                  <div
-                    style={{
-                      padding: '0.5rem 0.75rem',
-                      fontSize: '0.72rem',
-                      color: 'var(--text-subtle)',
-                      textTransform: 'uppercase',
-                      fontWeight: 700,
-                      letterSpacing: '0.05em',
-                    }}
-                  >
-                    Select Resident
-                  </div>
-                  {[
-                    { name: 'Eleanor Vance', room: 'Room 102 (Living Area)', initials: 'EV' },
-                    { name: 'Eleanor Vance', room: 'Room 102 (Bedroom)', initials: 'EV' },
-                    { name: 'Arthur Vance', room: 'Room 105 (Studio)', initials: 'AV' },
-                  ].map((r, i) => (
+                  {MONITORED_ROOMS.map((room) => (
                     <button
-                      key={i}
+                      key={room}
                       onClick={() => {
-                        setSelectedResident(r);
+                        setSelectedRoom(room);
                         setShowResidentMenu(false);
                         playSound('ping');
                       }}
@@ -293,33 +271,17 @@ export default function InteractiveNavbar() {
                         padding: '0.65rem 0.8rem',
                         borderRadius: '10px',
                         background:
-                          selectedResident.room === r.room ? 'rgba(20, 184, 166, 0.15)' : 'transparent',
+                          selectedRoom === room ? 'rgba(20, 184, 166, 0.15)' : 'transparent',
                         color: '#fff',
                         border: 'none',
                         cursor: 'pointer',
                         textAlign: 'left',
+                        fontSize: '0.88rem',
+                        fontWeight: 600,
                       }}
                     >
-                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                        <div
-                          className="resident-avatar"
-                          style={{
-                            background:
-                              r.initials === 'EV'
-                                ? 'linear-gradient(135deg, #10b981, #0d9488)'
-                                : '#6366f1',
-                          }}
-                        >
-                          {r.initials}
-                        </div>
-                        <div>
-                          <div style={{ fontSize: '0.86rem', fontWeight: 600 }}>{r.name}</div>
-                          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                            {r.room}
-                          </div>
-                        </div>
-                      </div>
-                      {selectedResident.room === r.room && <Check size={16} color="#5eead4" />}
+                      <span>{room}</span>
+                      {selectedRoom === room && <Check size={16} color="#5eead4" />}
                     </button>
                   ))}
                 </div>
