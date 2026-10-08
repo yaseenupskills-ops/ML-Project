@@ -129,6 +129,11 @@ export default function InteractiveNavbar() {
     setTimeout(() => setCopiedNumber(null), 2000);
   };
 
+  // The login screen is pre-authentication: keep it free of the app chrome.
+  if (pathname === '/login') {
+    return null;
+  }
+
   return (
     <>
       <header className="navbar">
