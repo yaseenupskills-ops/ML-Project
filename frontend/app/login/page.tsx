@@ -90,43 +90,33 @@ export default function LoginPage() {
         padding: '2rem 1rem',
       }}
     >
-      {/* Standalone brand mark, top-left corner (separate from the card) */}
+      {/* Standalone brand mark, top-left corner — matches the navbar brand */}
       <div
         style={{
           position: 'absolute',
           top: '1.5rem',
-          left: '1rem',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '0.55rem',
+          left: '1.5rem',
         }}
       >
-        <div
-          style={{
-            width: 34,
-            height: 34,
-            borderRadius: 10,
-            background: 'rgba(16, 185, 129, 0.14)',
-            border: '1px solid var(--border-glow)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-          }}
-        >
-          <ShieldCheck size={18} color="#10b981" />
+        <div className="brand">
+          <div className="brand-icon">
+            <ShieldCheck size={22} />
+          </div>
+          <div>
+            <div style={{ color: '#fff', lineHeight: 1.1 }}>FallGuard</div>
+            <div
+              style={{
+                fontSize: '0.68rem',
+                color: '#5eead4',
+                fontWeight: 600,
+                letterSpacing: '0.08em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Home &amp; Family
+            </div>
+          </div>
         </div>
-        <span
-          style={{
-            fontFamily: 'var(--font-display)',
-            fontSize: '1.15rem',
-            fontWeight: 800,
-            letterSpacing: '-0.02em',
-            color: 'var(--text-main)',
-            lineHeight: 1.1,
-          }}
-        >
-          FallGuard
-        </span>
       </div>
       <div
         style={{
