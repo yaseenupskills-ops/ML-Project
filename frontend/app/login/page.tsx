@@ -82,6 +82,7 @@ export default function LoginPage() {
   return (
     <div
       style={{
+        position: 'relative',
         minHeight: '62vh',
         display: 'flex',
         alignItems: 'center',
@@ -89,6 +90,44 @@ export default function LoginPage() {
         padding: '2rem 1rem',
       }}
     >
+      {/* Standalone brand mark, top-left corner (separate from the card) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '1.5rem',
+          left: '1rem',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0.55rem',
+        }}
+      >
+        <div
+          style={{
+            width: 34,
+            height: 34,
+            borderRadius: 10,
+            background: 'rgba(16, 185, 129, 0.14)',
+            border: '1px solid var(--border-glow)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <ShieldCheck size={18} color="#10b981" />
+        </div>
+        <span
+          style={{
+            fontFamily: 'var(--font-display)',
+            fontSize: '1.15rem',
+            fontWeight: 800,
+            letterSpacing: '-0.02em',
+            color: 'var(--text-main)',
+            lineHeight: 1.1,
+          }}
+        >
+          FallGuard
+        </span>
+      </div>
       <div
         style={{
           width: '100%',
@@ -100,50 +139,35 @@ export default function LoginPage() {
           padding: '2.4rem 2.2rem',
         }}
       >
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.9rem', marginBottom: '1.8rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.55rem' }}>
-            <div
-              style={{
-                width: 40,
-                height: 40,
-                borderRadius: '12px',
-                background: 'rgba(16, 185, 129, 0.14)',
-                border: '1px solid var(--border-glow)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <ShieldCheck size={20} color="#10b981" />
-            </div>
-            <span
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '1.35rem',
-                fontWeight: 800,
-                letterSpacing: '-0.02em',
-                color: 'var(--text-main)',
-                lineHeight: 1.1,
-              }}
-            >
-              FallGuard
-            </span>
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.4rem', marginBottom: '1.8rem' }}>
+          <div
+            style={{
+              width: 52,
+              height: 52,
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(16, 185, 129, 0.14)',
+              border: '1px solid var(--border-glow)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              marginBottom: '0.4rem',
+            }}
+          >
+            <ShieldCheck size={26} color="#10b981" />
           </div>
-          <div style={{ textAlign: 'center' }}>
-            <h1
-              style={{
-                fontFamily: 'var(--font-display)',
-                fontSize: '1.5rem',
-                fontWeight: 700,
-                letterSpacing: '-0.02em',
-              }}
-            >
-              Welcome back
-            </h1>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-              Sign in to your FallGuard console
-            </p>
-          </div>
+          <h1
+            style={{
+              fontFamily: 'var(--font-display)',
+              fontSize: '1.5rem',
+              fontWeight: 700,
+              letterSpacing: '-0.02em',
+            }}
+          >
+            Welcome back
+          </h1>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
+            Sign in to your FallGuard console
+          </p>
         </div>
 
         {checking ? (
