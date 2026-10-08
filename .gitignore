@@ -46,6 +46,9 @@ backend/.env
 .DS_Store
 Thumbs.db
 
+# Generated source snapshot for the project report
+FallGuard_source_code.txt
+
 # IDE
 .vscode/
 .idea/
