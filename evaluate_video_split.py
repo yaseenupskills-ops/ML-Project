@@ -163,7 +163,7 @@ def format_report(
     rollup: pd.DataFrame = result["rollup"]
 
     lines = [
-        "FallGuard Care - Random Forest Evaluation (held-out video split)",
+        "FallGuard - Random Forest Evaluation (held-out video split)",
         "=" * 64,
         f"Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "Dataset: UR Fall Detection Dataset (UR Fall), cam0, deduplicated",

@@ -157,7 +157,7 @@ export default function InteractiveNavbar() {
                 <ShieldCheck size={22} />
               </div>
               <div>
-                <div style={{ color: '#fff', lineHeight: 1.1 }}>FallGuard Care</div>
+                <div style={{ color: '#fff', lineHeight: 1.1 }}>FallGuard</div>
                 <div
                   style={{
                     fontSize: '0.68rem',

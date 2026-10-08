@@ -4,7 +4,7 @@ import { Lock } from 'lucide-react';
 import InteractiveNavbar from './components/Navbar';
 
 export const metadata: Metadata = {
-  title: 'FallGuard Care — Peaceful Safety & Fall Detection',
+  title: 'FallGuard — Peaceful Safety & Fall Detection',
   description: 'A compassionate, caregiver-first fall detection and resident safety console.',
 };
 

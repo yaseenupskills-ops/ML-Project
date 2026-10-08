@@ -820,7 +820,7 @@ def render_login_page():
     st.markdown('<div style="height:6rem;"></div>', unsafe_allow_html=True)
     c1, c2, c3 = st.columns([1, 2, 1])
     with c2:
-        st.title("\U0001f6e1\ufe0f FallGuard AI")
+        st.title("\U0001f6e1\ufe0f FallGuard")
         st.caption("Privacy-Preserving Elderly Care System")
         with st.form("login_form", clear_on_submit=False):
             username = st.text_input("Username", placeholder="Enter your username")
@@ -2236,7 +2236,7 @@ _PAGE_RUNNERS = {
 
 def main():
     st.set_page_config(
-        page_title="FallGuard AI \u2014 Elderly Care System",
+        page_title="FallGuard \u2014 Elderly Care System",
         page_icon="\U0001f6e1\ufe0f",
         layout="wide",
         initial_sidebar_state="expanded",

@@ -1,6 +1,6 @@
 """
-FallGuard Care - FastAPI API Bridge
------------------------------------
+FallGuard - FastAPI API Bridge
+------------------------------
 Provides a clean REST API and MJPEG stream proxy for the modern caregiver web application.
 """
 
@@ -37,7 +37,7 @@ logger = logging.getLogger("fallguard_api")
 logging.basicConfig(level=logging.INFO)
 
 app = FastAPI(
-    title="FallGuard Care API",
+    title="FallGuard API",
     description="Caregiver-first REST API for Fall Detection System",
     version="2.0.0",
 )

@@ -127,7 +127,7 @@ export default function LoginPage() {
             Welcome back
           </h1>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.88rem' }}>
-            Sign in to your FallGuard Care console
+            Sign in to your FallGuard console
           </p>
         </div>
 

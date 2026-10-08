@@ -1,4 +1,4 @@
-FallGuard Care - Random Forest Evaluation (held-out video split)
+FallGuard - Random Forest Evaluation (held-out video split)
 ================================================================
 Generated: 2026-10-08 00:39:06
 Dataset: UR Fall Detection Dataset (UR Fall), cam0, deduplicated
