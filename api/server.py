@@ -26,12 +26,12 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from alert_store import AlertStore
-from alert import AlertManager
-from settings_store import ContactStore, SettingsStore
-from project_config import load_config, resolve_path
-import stream_server as ss
-from live_detection import get_live_detector, cancel_active_alert
+from fallguard.alert_store import AlertStore
+from fallguard.alert import AlertManager
+from fallguard.settings_store import ContactStore, SettingsStore
+from fallguard.project_config import load_config, resolve_path
+from fallguard import stream_server as ss
+from fallguard.live_detection import get_live_detector, cancel_active_alert
 
 logger = logging.getLogger("fallguard_api")
 logging.basicConfig(level=logging.INFO)

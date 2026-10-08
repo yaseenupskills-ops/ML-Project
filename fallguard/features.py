@@ -10,7 +10,7 @@ import pandas as pd
 from typing import List
 import logging
 
-from project_config import load_config
+from .project_config import load_config
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -439,7 +439,7 @@ def compute_features_from_video(video_path: str,
                                clip_id: str = "unknown",
                                config_path: str = "config.yaml") -> pd.DataFrame:
     """Extract keypoints then compute features from video."""
-    from pose_extraction import extract_keypoints_from_video
+    from .pose_extraction import extract_keypoints_from_video
     
     keypoints = extract_keypoints_from_video(video_path, config_path)
     if len(keypoints) == 0:

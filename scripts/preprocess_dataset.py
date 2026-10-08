@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from features import FeatureEngineer  # noqa: E402
-from pose_extraction import PoseExtractor  # noqa: E402
+from fallguard.features import FeatureEngineer  # noqa: E402
+from fallguard.pose_extraction import PoseExtractor  # noqa: E402
 
 VIDEO_SUFFIXES = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
 SUBJECT_PATTERN = re.compile(r"(?:subject|actor|person)[_-]?([A-Za-z0-9]+)", re.I)

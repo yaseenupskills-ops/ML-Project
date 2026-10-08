@@ -27,7 +27,27 @@ A privacy-preserving fall detection system that processes webcam/CCTV feeds enti
 
 ## Project Structure
 ```
-fall-detection/
+fallguard/
+├── fallguard/               # Python package — detection pipeline, ML, alerts
+│   ├── pose_extraction.py   # MediaPipe wrapper + smoothing
+│   ├── features.py          # Velocity, stillness, orientation
+│   ├── model_rf.py          # Random Forest baseline
+│   ├── model_cnn_lstm.py    # CNN-LSTM stretch goal
+│   ├── decision_logic.py    # Majority voting + confidence tiers
+│   ├── grace_period.py      # Configurable confirmation window
+│   ├── alert.py             # Email/SMS alerting
+│   ├── alert_store.py       # Locked, atomic local alert store
+│   ├── camera.py            # Webcam / video-file / RTSP sources
+│   ├── stream_server.py     # Local authenticated video/metrics server
+│   ├── live_detection.py    # Live detection orchestration
+│   ├── simulate_stream.py   # End-to-end pipeline test
+│   ├── evaluate.py          # Held-out evaluation
+│   ├── evaluate_video_split.py  # Video-level held-out split evaluation
+│   ├── metrics.py           # Rate metrics for the stream server
+│   ├── settings_store.py    # Care settings + contacts store
+│   └── project_config.py    # Project-root config/path validation
+├── api/
+│   └── server.py            # FastAPI backend for the web app
 ├── data/
 │   ├── raw/                 # Manual download: URFD + Le2i datasets
 │   └── processed/           # Extracted keypoints only (.npy files)
@@ -39,19 +59,9 @@ fall-detection/
 │   └── verify_setup.py      # Artifact/configuration checks
 ├── config.yaml              # User-editable hyperparameters
 ├── config.yaml.example      # Template with documentation
-├── project_config.py        # Project-root config/path validation
-├── alert_store.py           # Locked, atomic local alert store
-├── pose_extraction.py       # MediaPipe wrapper + smoothing
-├── features.py              # Velocity, stillness, orientation
-├── model_rf.py              # Random Forest baseline
-├── model_cnn_lstm.py        # CNN-LSTM stretch goal
-├── decision_logic.py        # Majority voting + confidence tiers
-├── grace_period.py          # Configurable confirmation window
-├── alert.py                 # Email/SMS alerting
-├── simulate_stream.py       # End-to-end pipeline test
-├── evaluate.py              # Held-out evaluation
 ├── dashboard/
 │   └── app.py               # Streamlit caregiver dashboard
+├── frontend/                # Next.js web app (self-contained)
 └── report/
     └── report.md            # Methodology, results, limitations
 ```
@@ -82,22 +92,22 @@ fall-detection/
 4. **Run baseline pipeline**:
    ```bash
    # Extract pose keypoints from one video (repeat for the dataset)
-   python pose_extraction.py path/to/video.mp4
+   python -m fallguard.pose_extraction path/to/video.mp4
 
    # Build a subject-aware dataset from labeled videos
    python scripts/preprocess_dataset.py --input-dir data/raw/URFD
 
    # Engineer features from a video
-   python features.py path/to/video.mp4 subject_id clip_id
+   python -m fallguard.features path/to/video.mp4 subject_id clip_id
    
    # Train Random Forest baseline
-   python model_rf.py data/processed/features/train.csv
+   python -m fallguard.model_rf data/processed/features/train.csv
    
    # Evaluate with subject-independent split
-   python evaluate.py data/processed/features/test.csv
+   python -m fallguard.evaluate data/processed/features/test.csv
    
    # Test end-to-end with simulation
-   python simulate_stream.py data/processed/keypoints/ models/rf_baseline.joblib
+   python -m fallguard.simulate_stream data/processed/keypoints/ models/rf_baseline.joblib
    
    # Launch caregiver dashboard
    streamlit run dashboard/app.py --server.address 127.0.0.1

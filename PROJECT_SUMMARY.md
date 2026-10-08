@@ -116,27 +116,29 @@ grace_period:
 
 ## 📁 Project Structure
 ```
-fall-detection/
+fallguard/
 ├── config.yaml                    # All hyperparameters
-├── pose_extraction.py             # MediaPipe Pose wrapper
-├── features.py                    # Velocity, stillness, orientation features
-├── model_rf.py                    # Random Forest baseline
-├── model_cnn_lstm.py              # CNN-LSTM stretch goal
-├── decision_logic.py              # Majority voting + confidence tiers
-├── grace_period.py                # 20s confirmation window
-├── alert.py                       # Email/SMS alerting
-├── simulate_stream.py             # End-to-end pipeline test
-├── evaluate.py                    # Subject-independent evaluation
+├── fallguard/                     # Core Python package
+│   ├── pose_extraction.py         # MediaPipe Pose wrapper
+│   ├── features.py                # Velocity, stillness, orientation features
+│   ├── model_rf.py                # Random Forest baseline
+│   ├── model_cnn_lstm.py          # CNN-LSTM stretch goal
+│   ├── decision_logic.py          # Majority voting + confidence tiers
+│   ├── grace_period.py            # 20s confirmation window
+│   ├── alert.py                   # Email/SMS alerting
+│   ├── simulate_stream.py         # End-to-end pipeline test
+│   ├── evaluate.py                # Subject-independent evaluation
 ├── dashboard/app.py               # Streamlit alert dashboard
+├── api/server.py                  # FastAPI backend for the web app
+├── frontend/                      # Next.js web app
 ├── scripts/download_datasets.py   # Dataset download helper
-├── config.yaml                    # Runtime configuration
 ├── data/
 │   ├── raw/URFD/                  # 70 video sequences
 │   ├── raw/Le2i/                  # (empty - dataset unavailable)
 │   └── processed/                 # Keypoints, features, videos
 ├── models/                        # Trained models
 ├── logs/                          # Alert & grace period logs
-├── dashboard/app.py               # Streamlit dashboard
+└── dashboard/app.py               # Streamlit dashboard
 └── report/report.md               # Detailed methodology
 ```
 

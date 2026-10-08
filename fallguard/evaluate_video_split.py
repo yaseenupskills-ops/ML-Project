@@ -29,15 +29,16 @@ from sklearn.metrics import (
 )
 from sklearn.model_selection import train_test_split
 
-ROOT = Path(__file__).resolve().parent
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+from .project_config import PROJECT_ROOT
 
-from features import FeatureEngineer  # noqa: E402
-from model_rf import FallDetectionRF  # noqa: E402
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
-KEYPOINTS_DIR = ROOT / "data" / "processed" / "keypoints" / "URFD"
-OUTPUT_PATH = ROOT / "evaluation_results.txt"
+from .features import FeatureEngineer  # noqa: E402
+from .model_rf import FallDetectionRF  # noqa: E402
+
+KEYPOINTS_DIR = PROJECT_ROOT / "data" / "processed" / "keypoints" / "URFD"
+OUTPUT_PATH = PROJECT_ROOT / "report" / "evaluation_results.txt"
 TEST_FRACTION = 0.2
 SEED = 42
 
@@ -175,7 +176,7 @@ def format_report(
         f"{meta['window_frames']} frames, overlap {meta['overlap']:.0%} "
         f"(step {meta['step_frames']} frames)",
         f"  features per window: {len(model.feature_names or [])}",
-        f"  source: cached keypoints ({KEYPOINTS_DIR.relative_to(ROOT)}/*.npy)",
+        f"  source: cached keypoints ({KEYPOINTS_DIR.relative_to(PROJECT_ROOT)}/*.npy)",
         f"  clips skipped (too short): {', '.join(meta['skipped']) or 'none'}",
         "",
         "Split (by whole video, stratified, random_state=42)",

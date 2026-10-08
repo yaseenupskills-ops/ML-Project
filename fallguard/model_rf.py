@@ -14,7 +14,7 @@ from sklearn.preprocessing import StandardScaler
 import joblib
 import logging
 
-from project_config import load_config
+from .project_config import load_config
 from typing import Tuple, Dict, Any, Optional
 from pathlib import Path
 

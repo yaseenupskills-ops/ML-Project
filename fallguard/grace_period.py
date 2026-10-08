@@ -12,7 +12,7 @@ from typing import Optional, Callable
 from pathlib import Path
 from dataclasses import dataclass
 
-from project_config import load_config, resolve_config_path, resolve_path
+from .project_config import load_config, resolve_config_path, resolve_path
 
 logger = logging.getLogger(__name__)
 

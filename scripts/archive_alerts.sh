@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Archives the current alert log and starts a fresh empty one for the demo.
-# Run this from the project root (where logs/alerts.jsonl lives).
+# Safe to run from anywhere — resolves to the project root.
 set -euo pipefail
 umask 077
+
+# Jump to the project root (this script lives in <root>/scripts/).
+cd "$(dirname "$0")/.."
 
 LOG_PATH="logs/alerts.jsonl"
 ARCHIVE_DIR="logs/archive"

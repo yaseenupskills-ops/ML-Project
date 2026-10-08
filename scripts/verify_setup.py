@@ -10,7 +10,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from project_config import ConfigError, load_config, validate_config  # noqa: E402
+from fallguard.project_config import ConfigError, load_config, validate_config  # noqa: E402
 
 
 def main() -> int:

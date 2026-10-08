@@ -7,13 +7,13 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from alert_store import AlertStore
-from decision_logic import DecisionLogic, majority_vote_probabilities
-from evaluate_video_split import split_by_video
-from features import FeatureEngineer
-from grace_period import GracePeriodManager, simulate_grace_period
-from pose_extraction import PoseExtractor
-from settings_store import (
+from fallguard.alert_store import AlertStore
+from fallguard.decision_logic import DecisionLogic, majority_vote_probabilities
+from fallguard.evaluate_video_split import split_by_video
+from fallguard.features import FeatureEngineer
+from fallguard.grace_period import GracePeriodManager, simulate_grace_period
+from fallguard.pose_extraction import PoseExtractor
+from fallguard.settings_store import (
     DEFAULT_CONTACTS,
     DEFAULT_SETTINGS,
     ContactStore,

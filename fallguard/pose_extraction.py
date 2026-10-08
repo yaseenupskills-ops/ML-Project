@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import List, Generator, Optional, Tuple
 import logging
 
-from project_config import load_config
+from .project_config import PROJECT_ROOT, load_config
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +35,7 @@ class PoseExtractor:
             raise ValueError("pose.min_confidence must be between 0 and 1")
         
         # Resolve the bundled model relative to the project, not the caller's cwd.
-        self.model_path = Path(__file__).resolve().parent / 'models' / 'pose_landmarker_lite.task'
+        self.model_path = PROJECT_ROOT / 'models' / 'pose_landmarker_lite.task'
         if not self.model_path.exists():
             raise FileNotFoundError(
                 f"Pose landmarker model not found: {self.model_path}. "
@@ -201,7 +201,7 @@ def main() -> int:
     args = parser.parse_args()
 
     output = Path(args.output) if args.output else (
-        Path(__file__).resolve().parent / "data" / "processed" / "keypoints" /
+        PROJECT_ROOT / "data" / "processed" / "keypoints" /
         (Path(args.video).stem + ".npy")
     )
     output.parent.mkdir(parents=True, exist_ok=True)

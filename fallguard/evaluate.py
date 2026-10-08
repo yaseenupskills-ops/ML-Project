@@ -17,11 +17,11 @@ from sklearn.metrics import (
     f1_score, precision_score, recall_score, roc_auc_score
 )
 
-from project_config import load_config
+from .project_config import load_config
 
 # Import our modules
-from model_rf import FallDetectionRF
-# from model_cnn_lstm import FallDetectionCNNLSTM  # Uncomment when built
+from .model_rf import FallDetectionRF
+# from .model_cnn_lstm import FallDetectionCNNLSTM  # Uncomment when built
 
 logger = logging.getLogger(__name__)
 

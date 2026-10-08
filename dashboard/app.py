@@ -30,8 +30,8 @@ from datetime import datetime
 from typing import Optional
 import logging
 
-from alert_store import AlertStore
-from project_config import PROJECT_ROOT, load_config, resolve_path, validate_config
+from fallguard.alert_store import AlertStore
+from fallguard.project_config import PROJECT_ROOT, load_config, resolve_path, validate_config
 
 logger = logging.getLogger(__name__)
 
@@ -626,7 +626,7 @@ def _escalation_config() -> dict:
 def _auto_escalate_stale(alerts_df: pd.DataFrame, max_age_sec: float,
                          notify: bool = False) -> int:
     """Escalate pending alerts older than the threshold; optionally re-email."""
-    from alert import AlertManager
+    from fallguard.alert import AlertManager
     if max_age_sec <= 0 or alerts_df is None or len(alerts_df) == 0:
         return 0
     now = pd.to_datetime(time.time(), unit="s")
@@ -654,7 +654,7 @@ def _auto_escalate_stale(alerts_df: pd.DataFrame, max_age_sec: float,
 def _escalate_alerts(timestamps: list, user: dict, notify: bool = True,
                      alert_ids: list[str] | None = None) -> int:
     """Set alert(s) to escalated and optionally send follow-up email."""
-    from alert import AlertManager
+    from fallguard.alert import AlertManager
     username = user.get("username", "unknown")
     role = user.get("role", "viewer")
     manager = AlertManager()
@@ -801,7 +801,7 @@ def get_system_status() -> dict:
 def _is_stream_server_running() -> bool:
     """True if the local stream-server thread/HTTP is up."""
     try:
-        import stream_server as ss
+        from fallguard import stream_server as ss
         server = ss.get_stream_server()
         return server is not None and getattr(server, "_httpd", None) is not None
     except Exception:
@@ -982,7 +982,7 @@ def _cancel_live_alert(alert_id: str | None) -> None:
     if not alert_id:
         return
     try:
-        from live_detection import cancel_active_alert
+        from fallguard.live_detection import cancel_active_alert
         cancel_active_alert(str(alert_id))
     except Exception as exc:
         logger.debug("No active live grace worker for %s: %s", alert_id, exc)
@@ -1056,7 +1056,7 @@ def render_alert_detail(alert_data: dict, user: dict, key_prefix: str = "", expa
             cols = st.columns(3)
             with cols[0]:
                 if permissions.get("can_acknowledge") and st.button("\u2705 Acknowledge", key=f"ack_{key_prefix}", width="stretch", type="primary"):
-                    from alert import AlertManager
+                    from fallguard.alert import AlertManager
                     user_info = st.session_state.get("auth_user", {})
                     AlertManager.acknowledge_alert(
                         ALERT_LOG, alert_data.get("timestamp", 0),
@@ -1070,7 +1070,7 @@ def render_alert_detail(alert_data: dict, user: dict, key_prefix: str = "", expa
                     st.rerun()
             with cols[1]:
                 if permissions.get("can_dismiss") and st.button("\u274c Dismiss", key=f"dismiss_{key_prefix}", width="stretch"):
-                    from alert import AlertManager
+                    from fallguard.alert import AlertManager
                     user_info = st.session_state.get("auth_user", {})
                     AlertManager.acknowledge_alert(
                         ALERT_LOG, alert_data.get("timestamp", 0),
@@ -1128,7 +1128,7 @@ def _relative_age(timestamp: float) -> str:
 
 def _apply_alert_action(row: dict, action: str, user: dict, key: str):
     """Apply one alert action and keep the live grace worker in sync."""
-    from alert import AlertManager
+    from fallguard.alert import AlertManager
 
     alert_id = row.get("id")
     timestamp = row.get("timestamp", 0)
@@ -1418,7 +1418,7 @@ def _stream_server_config() -> dict:
 
 
 def _start_stream_server() -> Optional[dict]:
-    import stream_server as ss
+    from fallguard import stream_server as ss
     cfg = _stream_server_config()
     try:
         ss.ensure_stream_server_running(cfg)
@@ -1432,7 +1432,7 @@ def _start_stream_server() -> Optional[dict]:
 
 def _stream_base_url(cfg: dict = None) -> Optional[str]:
     try:
-        import stream_server as ss
+        from fallguard import stream_server as ss
         if ss.get_stream_server()._httpd is None:
             return None
         port = int((cfg or {}).get("port", 8091))
@@ -1443,7 +1443,7 @@ def _stream_base_url(cfg: dict = None) -> Optional[str]:
 
 def _stream_token() -> str:
     try:
-        import stream_server as ss
+        from fallguard import stream_server as ss
         return str(ss.get_stream_server().auth_token)
     except Exception:
         return ""
@@ -1770,7 +1770,7 @@ def _render_event_inspector(alerts_df: pd.DataFrame, user: dict):
 def _current_stream_source() -> Optional[object]:
     """Return the active stream-server camera source value or None."""
     try:
-        import stream_server as ss
+        from fallguard import stream_server as ss
         server = ss.get_stream_server()
         if server is None:
             return None
@@ -1827,12 +1827,12 @@ def _render_source_toggle():
 
     if str(want) != st.session_state["live_source_applied"]:
         st.session_state["live_source_applied"] = str(want)
-        import stream_server as ss
+        from fallguard import stream_server as ss
         try:
             server = ss.get_stream_server()
             if server is not None:
                 server.switch_source(want)
-            from live_detection import get_live_detector
+            from fallguard.live_detection import get_live_detector
             detector = get_live_detector()
             detector.run_session(want)
             show_toast(f"Detection session started on {choice}", "\U0001f4f9")
@@ -1843,7 +1843,7 @@ def _render_source_toggle():
 
     # Status line for the active session
     try:
-        from live_detection import get_live_detector
+        from fallguard.live_detection import get_live_detector
         detector = get_live_detector()
         status = detector.status()
         parts = [f"Active source: **{choice}**"]

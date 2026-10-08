@@ -6,12 +6,24 @@ Privacy-preserving fall detection for elderly care. Webcam → MediaPipe Pose �
 ## Key Entry Points
 | Purpose | Command / File |
 |---------|----------------|
-| Train RF baseline | `python model_rf.py data/processed/features/train.csv` |
-| Evaluate (subject-independent) | `python evaluate.py data/processed/features/test.csv` |
-| End-to-end simulation | `python simulate_stream.py --video data/demo/demo_fall.mp4 models/rf_baseline.joblib` |
+| Train RF baseline | `python -m fallguard.model_rf data/processed/features/train.csv` |
+| Evaluate (subject-independent) | `python -m fallguard.evaluate data/processed/features/test.csv` |
+| End-to-end simulation | `python -m fallguard.simulate_stream --video data/demo/demo_fall.mp4 models/rf_baseline.joblib` |
 | Dashboard | `streamlit run dashboard/app.py --server.address 127.0.0.1` |
 | Setup check | `python scripts/verify_setup.py` |
 | Unit tests | `PYTHONPATH=. python tests/test_system.py` |
+
+## Project Layout
+```
+fallguard/            Python package — detection pipeline, ML models, evaluation, alerts
+api/server.py         FastAPI backend for the web app
+dashboard/app.py      Streamlit dashboard (demo/standalone)
+scripts/              Utilities + maintenance (setup check, dataset prep, archive_alerts.sh)
+tests/                Unit, regression, and system-test suites
+frontend/             Next.js web app (self-contained)
+data/  models/  logs/  report/   Runtime data & artifacts
+config.yaml(.example)  requirements.txt  .env.example
+```
 
 ## Environment
 - Python 3.10+ (tested on 3.14, Apple Silicon MPS)
@@ -33,7 +45,7 @@ Privacy-preserving fall detection for elderly care. Webcam → MediaPipe Pose �
 python scripts/verify_setup.py
 
 # Compile check
-python -m py_compile dashboard/app.py alert.py stream_server.py simulate_stream.py metrics.py grace_period.py camera.py
+python -m py_compile api/server.py dashboard/app.py fallguard/*.py tests/*.py scripts/*.py
 
 # Test suite
 PYTHONPATH=. python tests/test_system.py
@@ -41,7 +53,7 @@ PYTHONPATH=. python tests/test_units.py
 PYTHONPATH=. python tests/test_regressions.py
 
 # Lint (pyflakes)
-python -m pyflakes dashboard/app.py stream_server.py
+python -m pyflakes dashboard/app.py fallguard/stream_server.py
 ```
 
 ## Demo Mode (for live presentation)
@@ -55,14 +67,14 @@ streamlit run dashboard/app.py --server.address 127.0.0.1
 cp /tmp/config.yaml.bak config.yaml
 ```
 - Demo video: `data/demo/demo_fall.mp4` (65 frames, 30fps, 2.2s loop from UR Fall Dataset `fall-02`)
-- CLI alternative: `python simulate_stream.py --video data/demo/demo_fall.mp4 models/rf_baseline.joblib`
+- CLI alternative: `python -m fallguard.simulate_stream --video data/demo/demo_fall.mp4 models/rf_baseline.joblib`
 
 ## Architecture Notes
-- **Alert storage**: `alert_store.py` adds stable IDs, file locking, and atomic JSONL updates. `alert.py` and the dashboard use IDs for new actions.
-- **Alert log field names**: `alert.py` writes `fall_event_subject`, `fall_event_confidence`, `fall_event_tier`, `grace_period_outcome`, `grace_period_response_time`. Dashboard `load_alert_history()` **renames these** to `subject_id`, `confidence`, `tier`, `outcome`, `response_time`.
+- **Alert storage**: `fallguard/alert_store.py` adds stable IDs, file locking, and atomic JSONL updates. `fallguard/alert.py` and the dashboard use IDs for new actions.
+- **Alert log field names**: `fallguard/alert.py` writes `fall_event_subject`, `fall_event_confidence`, `fall_event_tier`, `grace_period_outcome`, `grace_period_response_time`. Dashboard `load_alert_history()` **renames these** to `subject_id`, `confidence`, `tier`, `outcome`, `response_time`.
 - **Grace period timing**: wall-clock based (20s). Video file playback throttles to **native FPS** (`video_fps` in `VideoFileCamera._capture_loop`), not config target FPS, to keep alert timing correct.
-- **Camera factory**: `camera.create_camera(source)` routes int→CameraManager, file→VideoFileCamera (pops `loop`/`real_time` kwargs for webcam/RTSP), rtsp://→CameraManagerRTSP.
-- **Stream server** (`stream_server.py`): authenticated local HTTP endpoints for `/video_feed`, `/metrics`, and recordings. It binds 127.0.0.1 and generates a per-process token.
+- **Camera factory**: `fallguard.camera.create_camera(source)` routes int→CameraManager, file→VideoFileCamera (pops `loop`/`real_time` kwargs for webcam/RTSP), rtsp://→CameraManagerRTSP.
+- **Stream server** (`fallguard/stream_server.py`): authenticated local HTTP endpoints for `/video_feed`, `/metrics`, and recordings. It binds 127.0.0.1 and generates a per-process token.
 
 ## Privacy Constraints (Hard Rules)
 - ❌ No raw-frame storage or transmission by default

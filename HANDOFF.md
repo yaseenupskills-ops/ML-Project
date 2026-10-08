@@ -14,10 +14,10 @@ Dashboard phases 1–4 done + verified. NEW: demo-mode video source (`camera.sou
 ### Demo-mode video source (NEW this session): DONE & verified
 - `config.yaml`: added `camera.source` (int = webcam index | str = file path | str = RTSP). `camera.index` kept as deprecated fallback. Default is `0` (webcam).
 - `dashboard/app.py` `_stream_server_config()`: reads `cam.get("source", cam.get("index", 0))` → passes single `source` into stream server config.
-- `stream_server.py` `_ensure_camera()`: `src = cam_cfg.get("source", cam_cfg.get("index", 0))`; `_probe_camera()` now forwards `loop=video.loop, real_time=video.real_time`.
-- `camera.py` `create_camera()`: pops `loop`/`real_time` kwargs for webcam/RTSP (CameraManager doesn't accept them); passes them only to `VideoFileCamera`.
-- `camera.py` `VideoFileCamera._capture_loop()`: real-time throttle now uses the video's **native** FPS (`video_fps`), not config target FPS — keeps grace-period timing wall-clock-aligned for file sources.
-- `simulate_stream.py`:
+- `fallguard/stream_server.py` `_ensure_camera()`: `src = cam_cfg.get("source", cam_cfg.get("index", 0))`; `_probe_camera()` now forwards `loop=video.loop, real_time=video.real_time`.
+- `fallguard/camera.py` `create_camera()`: pops `loop`/`real_time` kwargs for webcam/RTSP (CameraManager doesn't accept them); passes them only to `VideoFileCamera`.
+- `fallguard/camera.py` `VideoFileCamera._capture_loop()`: real-time throttle now uses the video's **native** FPS (`video_fps`), not config target FPS — keeps grace-period timing wall-clock-aligned for file sources.
+- `fallguard/simulate_stream.py`:
   - `run_live_detection()` now builds camera via `create_camera()` using `camera.source` (fallback `camera.index`); added optional `camera_source` arg; source label derived from cam attrs.
   - Fixed pre-existing `UnboundLocalError`: `cam_config` was referenced after the `camera_obj` branch that skipped defining it (2 spots).
   - Fixed pre-existing `NameError`: `run_live_detection` used `simulate_grace_period` without import (only a local import existed in `process_keypoint_sequence`). Moved `simulate_grace_period` to module-level import, removed the local one.
@@ -28,7 +28,7 @@ Verified:
 - `py_compile` all modules + `tests/test_system.py` all pass.
 - `create_camera()` returns: `CameraManager` for `0`, `VideoFileCamera` (loop+real_time=True) for file, `CameraManagerRTSP` for rtsp://.
 - StreamServer probe with demo file → `VideoFileCamera`, native fps 30, duration 2.17s.
-- Manual demo run (`simulate_stream.py --video data/demo/demo_fall.mp4`): detected fall candidate → 20s grace period → alert triggered. Repeated **7x over ~28s** proving looping (`cap.set(POS_FRAMES,0)`) + FPS-sync keep pipeline live.
+- Manual demo run (`python -m fallguard.simulate_stream --video data/demo/demo_fall.mp4`): detected fall candidate → 20s grace period → alert triggered. Repeated **7x over ~28s** proving looping (`cap.set(POS_FRAMES,0)`) + FPS-sync keep pipeline live.
 - Config restored to `camera.source: 0`; `_ensure_camera()` opens real `CameraManager` webcam (hardware present).
 
 How to run the demo (tomorrow):
@@ -43,7 +43,7 @@ streamlit run dashboard/app.py
 # 4) restore webcam mode
 cp /tmp/config.yaml.bak config.yaml
 ```
-CLI-only alternative: `python simulate_stream.py --video data/demo/demo_fall.mp4 models/rf_baseline.joblib`
+CLI-only alternative: `python -m fallguard.simulate_stream --video data/demo/demo_fall.mp4 models/rf_baseline.joblib`
 
 ### Phase 4 Sprint 1 (Analytics, caregiver-only): DONE & verified
 Decisions honored: no accuracy metrics (no ground-truth label in `alerts.jsonl` — only ack/dismiss workflow data, not confirmed-fall/false-positive), no role-gated toggle views, CSV only, time-to-acknowledge prioritized over heatmap, per-subject trends instead of heatmap, reporting boundary NOT built.
@@ -64,9 +64,9 @@ Verified:
 ```
 cd "/Users/yaseensmac/Documents/ML Project"
 source .venv/bin/activate
-python -m py_compile dashboard/app.py alert.py stream_server.py simulate_stream.py metrics.py grace_period.py camera.py
+python -m py_compile api/server.py dashboard/app.py fallguard/*.py tests/*.py scripts/*.py
 PYTHONPATH=. python tests/test_system.py
-python -m pyflakes dashboard/app.py stream_server.py   # benign: 2 unused imports + 1 dead local
+python -m pyflakes dashboard/app.py fallguard/stream_server.py   # benign: 2 unused imports + 1 dead local
 streamlit run dashboard/app.py          # Analytics page to review sprint 1 additions
 ```
 
@@ -77,7 +77,7 @@ streamlit run dashboard/app.py          # Analytics page to review sprint 1 addi
 - Privacy constraints remain: no raw video transmission/storage outside device, no activity-behavioral reporting without an explicit boundary decision (flagged, NOT built).
 - Roles: caregiver sees only assigned subjects' alerts (S1/S2/S3); sample `alerts.jsonl` subjects don't match → caregiver sees empty analytics. That is correct behavior.
 - `data/recordings/rec_20260923_102025.mp4` is a synthetic 8s test segment for Phase 3 Playback manual check — safe to delete.
-- `simulate_stream.py` single-file CLI branch references undefined `simulate_from_keypoints_file` (dead code path, pre-existing, untouched).
+- `fallguard/simulate_stream.py` single-file CLI branch references undefined `simulate_from_keypoints_file` (dead code path, pre-existing, untouched).
 - `data/demo/demo_fall.mp4` is the built demo clip for the presentation — keep it.
 
 ## Roadmap
@@ -95,7 +95,7 @@ streamlit run dashboard/app.py          # Analytics page to review sprint 1 addi
 2. Decide reporting-boundary if PDF reports are ever desired.
 3. Remove synthetic test recording when done with manual Phase 3 verification.
 4. Demo presentation: flip `camera.source` to `data/demo/demo_fall.mp4`, run dashboard, restore to `0` after (backup config at `/tmp/config.yaml.bak`).
-5. Alert-log field-mapping BUG FOUND & FIXED: `load_alert_history()` renamed `fall_event_*`/`grace_period_*` JSONL keys → `subject_id`/`confidence`/`tier`/`outcome`/`response_time`; previously those columns never existed in the JSONL, so every alert displayed as `unknown / LOW / 0%`. Fixed in `dashboard/app.py:276` and verified (archived 157 alerts + live demo alert now render real values). `archive_alerts.sh` added (archives + clears alert log for clean demo).
+5. Alert-log field-mapping BUG FOUND & FIXED: `load_alert_history()` renamed `fall_event_*`/`grace_period_*` JSONL keys → `subject_id`/`confidence`/`tier`/`outcome`/`response_time`; previously those columns never existed in the JSONL, so every alert displayed as `unknown / LOW / 0%`. Fixed in `dashboard/app.py:276` and verified (archived 157 alerts + live demo alert now render real values). `scripts/archive_alerts.sh` added (archives + clears alert log for clean demo).
 
 ---
 
@@ -107,6 +107,6 @@ streamlit run dashboard/app.py          # Analytics page to review sprint 1 addi
 - Alerts page: metrics, Tier/Status pills, From/To date filters, multi-row bulk toolbar (Ack/Dismiss/Escalate), keyboard shortcuts, auto-escalate; helpers `_escalation_config()`, `_auto_escalate_stale(...)`, `_escalate_alerts(...)`.
 
 ### Phase 3 (Live Dashboard + Timeline Scrubbing): DONE
-- `stream_server.py`: MJPEG `/video_feed`, `/frame`, `/metrics`, `/health`, `/recordings`, `/record/start|stop`, NEW `/recordings/<name>/info`, `_parse_segment_start()`.
+- `fallguard/stream_server.py`: MJPEG `/video_feed`, `/frame`, `/metrics`, `/health`, `/recordings`, `/record/start|stop`, NEW `/recordings/<name>/info`, `_parse_segment_start()`.
 - `dashboard/app.py`: `_map_alerts_to_recordings()`, `_fetch_recording_info()`, `_render_recording_timeline()` (st.html dots, `?seek=` query-param seeking), extended `_render_recording_panel(..., alerts_df)` with `st.video(path, start_time=seek)`.
 - Fixed latent bug: bulk Acknowledge/Dismiss buttons had undefined `AlertManager` (added local import).

@@ -26,8 +26,9 @@ from typing import Optional
 import cv2
 import numpy as np
 
-import camera as camera_module
-import metrics
+from . import camera as camera_module
+from . import metrics
+from .project_config import PROJECT_ROOT
 
 logger = logging.getLogger(__name__)
 
@@ -145,7 +146,7 @@ class StreamServer:
         self._camera_owner = False
         rec_path = Path(self.config.get("record_path", "data/recordings"))
         if not rec_path.is_absolute():
-            rec_path = Path(__file__).resolve().parent / rec_path
+            rec_path = PROJECT_ROOT / rec_path
         self._rec_path = rec_path
         self._max_days = int(self.config.get("recording_max_days", 7))
         self._segment_duration = float(
@@ -668,7 +669,7 @@ def get_stream_server(config: dict = None) -> StreamServer:
             if config.get("record_path"):
                 record_path = Path(config["record_path"])
                 if not record_path.is_absolute():
-                    record_path = Path(__file__).resolve().parent / record_path
+                    record_path = PROJECT_ROOT / record_path
                 _server_singleton._rec_path = record_path
             origins = config.get("allowed_origins")
             if origins:

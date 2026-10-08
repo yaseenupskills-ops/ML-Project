@@ -11,18 +11,18 @@ import logging
 from typing import Generator, Optional, Tuple, List
 from pathlib import Path
 
-from project_config import load_config
+from .project_config import load_config
 import sys
 
 # Import our modules
-from pose_extraction import PoseExtractor
-from features import FeatureEngineer
-from model_rf import FallDetectionRF
-from decision_logic import DecisionLogic
-from grace_period import GracePeriodManager, simulate_grace_period
-from alert import AlertManager
-from camera import VideoFileCamera, create_camera
-import metrics
+from .pose_extraction import PoseExtractor
+from .features import FeatureEngineer
+from .model_rf import FallDetectionRF
+from .decision_logic import DecisionLogic
+from .grace_period import GracePeriodManager, simulate_grace_period
+from .alert import AlertManager
+from .camera import VideoFileCamera, create_camera
+from . import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -668,24 +668,24 @@ if __name__ == "__main__":
     
     if len(sys.argv) < 2:
         print("Usage:")
-        print("  python simulate_stream.py --camera <index> [model_path] [duration_sec]")
-        print("  python simulate_stream.py --video <video_file> [model_path] [duration_sec]")
-        print("  python simulate_stream.py <keypoints_file.npy> <model_path> [subject_id] [clip_id]")
-        print("  python simulate_stream.py <keypoints_dir> <model_path> --dir [max_files]")
+        print("  python -m fallguard.simulate_stream --camera <index> [model_path] [duration_sec]")
+        print("  python -m fallguard.simulate_stream --video <video_file> [model_path] [duration_sec]")
+        print("  python -m fallguard.simulate_stream <keypoints_file.npy> <model_path> [subject_id] [clip_id]")
+        print("  python -m fallguard.simulate_stream <keypoints_dir> <model_path> --dir [max_files]")
         sys.exit(1)
     
     if sys.argv[1] in ("-h", "--help"):
         print("Usage:")
-        print("  python simulate_stream.py --camera <index> [model_path] [duration_sec]")
-        print("  python simulate_stream.py --video <video_file> [model_path] [duration_sec]")
-        print("  python simulate_stream.py <keypoints_file.npy> <model_path> [subject_id] [clip_id]")
-        print("  python simulate_stream.py <keypoints_dir> <model_path> --dir [max_files]")
+        print("  python -m fallguard.simulate_stream --camera <index> [model_path] [duration_sec]")
+        print("  python -m fallguard.simulate_stream --video <video_file> [model_path] [duration_sec]")
+        print("  python -m fallguard.simulate_stream <keypoints_file.npy> <model_path> [subject_id] [clip_id]")
+        print("  python -m fallguard.simulate_stream <keypoints_dir> <model_path> --dir [max_files]")
         sys.exit(0)
     
     if sys.argv[1] == "--camera":
         # Live camera mode
         if len(sys.argv) < 3:
-            print("Usage: python simulate_stream.py --camera <index> [model_path] [duration_sec]")
+            print("Usage: python -m fallguard.simulate_stream --camera <index> [model_path] [duration_sec]")
             sys.exit(1)
         camera_index = int(sys.argv[2]) if len(sys.argv) > 2 else 0
         model_path = sys.argv[3] if len(sys.argv) > 3 else "models/rf_baseline.joblib"
@@ -698,7 +698,7 @@ if __name__ == "__main__":
     elif sys.argv[1] == "--video":
         # Video file mode (for demos)
         if len(sys.argv) < 3:
-            print("Usage: python simulate_stream.py --video <video_file> [model_path] [duration_sec]")
+            print("Usage: python -m fallguard.simulate_stream --video <video_file> [model_path] [duration_sec]")
             sys.exit(1)
         video_file = sys.argv[2]
         model_path = sys.argv[3] if len(sys.argv) > 3 else "models/rf_baseline.joblib"

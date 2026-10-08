@@ -13,14 +13,14 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from project_config import load_config, resolve_path
-from pose_extraction import PoseExtractor
-from features import FeatureEngineer
-from model_rf import FallDetectionRF
-from decision_logic import DecisionLogic
-from grace_period import GracePeriodManager
-from alert import AlertManager
-import metrics
+from .project_config import PROJECT_ROOT, load_config, resolve_path
+from .pose_extraction import PoseExtractor
+from .features import FeatureEngineer
+from .model_rf import FallDetectionRF
+from .decision_logic import DecisionLogic
+from .grace_period import GracePeriodManager
+from .alert import AlertManager
+from . import metrics
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +72,7 @@ class LiveDetector:
         self.model = FallDetectionRF(config_path)
         self.model_path = resolve_path(
             self.config.get("model", {}).get("rf_path", "models/rf_baseline.joblib"),
-            base=Path(__file__).resolve().parent,
+            base=PROJECT_ROOT,
         ) or Path("models/rf_baseline.joblib")
         self._load_model()
 
@@ -178,7 +178,7 @@ class LiveDetector:
     # ─── detection loop ─────────────────────────────────────────────────────
 
     def _session_loop(self, stop_event: threading.Event):
-        import stream_server as ss
+        from . import stream_server as ss
 
         try:
             cam = ss.get_stream_server().ensure_camera()

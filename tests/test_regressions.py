@@ -4,10 +4,10 @@ import unittest
 
 import numpy as np
 
-from features import FeatureEngineer
-from model_rf import FallDetectionRF
-from project_config import validate_config
-from stream_server import StreamServer
+from fallguard.features import FeatureEngineer
+from fallguard.model_rf import FallDetectionRF
+from fallguard.project_config import validate_config
+from fallguard.stream_server import StreamServer
 
 
 class TestInferenceContract(unittest.TestCase):

@@ -14,11 +14,11 @@ from email.mime.multipart import MIMEMultipart
 from typing import Optional
 import time
 
-from project_config import load_config, resolve_config_path, resolve_path
+from .project_config import load_config, resolve_config_path, resolve_path
 from pathlib import Path
 import json
 
-from alert_store import AlertStore
+from .alert_store import AlertStore
 
 # Try to import Twilio for SMS (stretch goal)
 try:
@@ -83,7 +83,7 @@ class AlertManager:
         # values are loaded per-instance; POST /api/settings refreshes the
         # running detector's instance live.
         try:
-            from settings_store import SettingsStore
+            from .settings_store import SettingsStore
             _settings = SettingsStore(
                 resolve_path("data/runtime_settings.json", base=config_file.parent)
             ).get()

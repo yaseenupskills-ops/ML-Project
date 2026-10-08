@@ -9,7 +9,7 @@ import pandas as pd
 from typing import List, Tuple, Optional
 import logging
 
-from project_config import load_config
+from .project_config import load_config
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
